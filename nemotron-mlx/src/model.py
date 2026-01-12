@@ -4,7 +4,7 @@ import mlx.core as mx
 import mlx.nn as nn
 from typing import Optional, List, Tuple, Dict
 from .encoder import FastConformerEncoder
-from .decoder import RNNTDecoder, RNNTJointNetwork, GreedyRNNTDecoder
+from .decoder import RNNTDecoder, RNNTJointNetwork, GreedyRNNTDecoder, BeamSearchRNNTDecoder
 
 
 class NemotronSpeechASR(nn.Module):
@@ -86,6 +86,14 @@ class NemotronSpeechASR(nn.Module):
             decoder=self.decoder,
             joint_network=self.joint_network,
             blank_index=blank_index,
+        )
+
+        # Beam search decoder for better accuracy
+        self.beam_search_decoder = BeamSearchRNNTDecoder(
+            decoder=self.decoder,
+            joint_network=self.joint_network,
+            blank_index=blank_index,
+            beam_size=4,
         )
 
     def encode(
@@ -195,13 +203,17 @@ class NemotronSpeechASR(nn.Module):
         self,
         mel_features: mx.array,
         chunk_size: Optional[int] = None,
+        use_beam_search: bool = False,
+        beam_size: int = 4,
     ) -> List[List[int]]:
         """
-        Transcribe audio using greedy decoding.
+        Transcribe audio using greedy or beam search decoding.
 
         Args:
             mel_features: Mel spectrogram [batch, time, n_mels]
             chunk_size: Optional chunk size for streaming (in frames)
+            use_beam_search: Whether to use beam search (slower but more accurate)
+            beam_size: Beam size for beam search (only if use_beam_search=True)
 
         Returns:
             List of token sequences (one per batch item)
@@ -209,10 +221,18 @@ class NemotronSpeechASR(nn.Module):
         if chunk_size is None:
             # Non-streaming inference
             encoder_outputs, _ = self.encode(mel_features)
-            predictions = self.greedy_decoder(encoder_outputs)
+
+            if use_beam_search:
+                # Update beam size if needed
+                if beam_size != self.beam_search_decoder.beam_size:
+                    self.beam_search_decoder.beam_size = beam_size
+                predictions = self.beam_search_decoder(encoder_outputs)
+            else:
+                predictions = self.greedy_decoder(encoder_outputs)
+
             return predictions
         else:
-            # Streaming inference
+            # Streaming inference (uses greedy only for now)
             return self._transcribe_streaming(mel_features, chunk_size)
 
     def _transcribe_streaming(

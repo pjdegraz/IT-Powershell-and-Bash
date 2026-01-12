@@ -237,3 +237,173 @@ class GreedyRNNTDecoder:
                 symbols_count += 1
 
         return predictions
+
+
+class BeamSearchRNNTDecoder:
+    """Beam search decoder for RNNT inference with improved accuracy."""
+
+    def __init__(
+        self,
+        decoder: RNNTDecoder,
+        joint_network: RNNTJointNetwork,
+        blank_index: int = 0,
+        beam_size: int = 4,
+        max_symbols_per_step: int = 10,
+    ):
+        """
+        Args:
+            decoder: RNNT decoder module
+            joint_network: RNNT joint network
+            blank_index: Index of the blank token
+            beam_size: Number of beams to keep
+            max_symbols_per_step: Maximum number of symbols to emit per time step
+        """
+        self.decoder = decoder
+        self.joint_network = joint_network
+        self.blank_index = blank_index
+        self.beam_size = beam_size
+        self.max_symbols_per_step = max_symbols_per_step
+
+    def __call__(self, encoder_outputs: mx.array) -> list:
+        """
+        Beam search decoding of encoder outputs.
+
+        Args:
+            encoder_outputs: Encoder outputs [batch, time, encoder_dim]
+
+        Returns:
+            List of decoded token sequences (one per batch item)
+        """
+        batch_size, time_steps, _ = encoder_outputs.shape
+
+        # For simplicity, process one batch item at a time
+        results = []
+        for b in range(batch_size):
+            enc_b = encoder_outputs[b : b + 1]  # [1, time, encoder_dim]
+            result = self._beam_search_single(enc_b)
+            results.append(result)
+
+        return results
+
+    def _beam_search_single(self, encoder_outputs: mx.array) -> list:
+        """
+        Beam search for a single sequence.
+
+        Args:
+            encoder_outputs: Encoder outputs [1, time, encoder_dim]
+
+        Returns:
+            List of decoded tokens
+        """
+        time_steps = encoder_outputs.shape[1]
+
+        # Initialize beams: (tokens, score, hidden_states)
+        beams = [
+            {
+                "tokens": [],
+                "score": 0.0,
+                "hidden_states": None,
+            }
+        ]
+
+        # Process each time step
+        for t in range(time_steps):
+            enc_t = encoder_outputs[:, t : t + 1, :]  # [1, 1, encoder_dim]
+
+            new_beams = []
+
+            # Expand each beam
+            for beam in beams:
+                tokens = beam["tokens"]
+                score = beam["score"]
+                hidden_states = beam["hidden_states"]
+
+                # Try emitting symbols
+                current_tokens = tokens.copy()
+                current_score = score
+                current_hidden = hidden_states
+
+                symbols_emitted = 0
+
+                while symbols_emitted < self.max_symbols_per_step:
+                    # Get current token (or blank if empty)
+                    if len(current_tokens) == 0:
+                        token_input = mx.ones((1, 1), dtype=mx.int32) * self.blank_index
+                    else:
+                        token_input = mx.array([[current_tokens[-1]]], dtype=mx.int32)
+
+                    # Get decoder output
+                    dec_out, new_hidden = self.decoder(token_input, current_hidden)
+
+                    # Get joint network logits
+                    logits = self.joint_network(enc_t, dec_out)  # [1, 1, 1, vocab_size]
+                    logits = logits[0, 0, 0, :]  # [vocab_size]
+
+                    # Get log probabilities
+                    log_probs = mx.log_softmax(logits, axis=-1)
+
+                    # Get top-k candidates
+                    top_k = min(self.beam_size, self.decoder.vocab_size)
+                    top_scores, top_indices = mx.topk(log_probs, k=top_k)
+
+                    # Check if blank is most likely
+                    blank_score = float(log_probs[self.blank_index])
+
+                    # Always consider blank (move to next time step)
+                    new_beams.append(
+                        {
+                            "tokens": current_tokens,
+                            "score": current_score + blank_score,
+                            "hidden_states": current_hidden,
+                        }
+                    )
+
+                    # Consider emitting non-blank tokens
+                    for i in range(top_k):
+                        token_id = int(top_indices[i])
+                        token_score = float(top_scores[i])
+
+                        if token_id != self.blank_index:
+                            new_tokens = current_tokens + [token_id]
+                            new_beam_score = current_score + token_score
+
+                            new_beams.append(
+                                {
+                                    "tokens": new_tokens,
+                                    "score": new_beam_score,
+                                    "hidden_states": new_hidden,
+                                }
+                            )
+
+                    # If blank is most likely, stop emitting for this beam
+                    if blank_score > float(top_scores[0]):
+                        break
+
+                    # Continue with best non-blank token
+                    best_non_blank_idx = 0
+                    for i in range(top_k):
+                        if int(top_indices[i]) != self.blank_index:
+                            best_non_blank_idx = i
+                            break
+
+                    best_token = int(top_indices[best_non_blank_idx])
+                    best_score = float(top_scores[best_non_blank_idx])
+
+                    if best_token == self.blank_index:
+                        break
+
+                    current_tokens = current_tokens + [best_token]
+                    current_score = current_score + best_score
+                    current_hidden = new_hidden
+                    symbols_emitted += 1
+
+            # Keep top beams
+            beams = sorted(new_beams, key=lambda x: x["score"], reverse=True)[
+                : self.beam_size
+            ]
+
+        # Return best beam
+        if beams:
+            return beams[0]["tokens"]
+        else:
+            return []
