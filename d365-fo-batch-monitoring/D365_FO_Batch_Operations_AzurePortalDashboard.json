@@ -1,0 +1,799 @@
+{
+  "properties": {
+    "lenses": [
+      {
+        "order": 0,
+        "parts": [
+          {
+            "position": {
+              "x": 0,
+              "y": 0,
+              "colSpan": 12,
+              "rowSpan": 3
+            },
+            "metadata": {
+              "inputs": [],
+              "type": "Extension/HubsExtension/PartType/MarkdownPart",
+              "settings": {
+                "content": {
+                  "settings": {
+                    "content": "## Batch operations — quick overview\nBatch and DMF signals are collected in **Application Insights** and stored in the connected **Log Analytics workspace**. These panels are **telemetry observations**, not authoritative F&O job statuses.\n\n**For a custom incident window and the expandable JOB → TASK → RUN tree**, open the detailed Azure Monitor Workbook in the same workspace. **An end event does not necessarily mean success.** Missing events do not prove a job is running.",
+                    "title": "D365 F&O — Batch & DMF Operations (UAT)",
+                    "subtitle": "Azure Portal monitoring overview",
+                    "markdownUri": null
+                  }
+                }
+              }
+            }
+          },
+          {
+            "position": {
+              "x": 0,
+              "y": 3,
+              "colSpan": 6,
+              "rowSpan": 5
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "resourceTypeMode",
+                  "isOptional": true
+                },
+                {
+                  "name": "ComponentId",
+                  "isOptional": true
+                },
+                {
+                  "name": "Scope",
+                  "value": {
+                    "resourceIds": [
+                      "__REPLACE_WITH_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID__"
+                    ]
+                  },
+                  "isOptional": true
+                },
+                {
+                  "name": "PartId",
+                  "value": "7b64d124-65d6-42b7-a9b2-9342c07cc001",
+                  "isOptional": true
+                },
+                {
+                  "name": "Version",
+                  "value": "2.0",
+                  "isOptional": true
+                },
+                {
+                  "name": "TimeRange",
+                  "value": "P2D",
+                  "isOptional": true
+                },
+                {
+                  "name": "DashboardId",
+                  "isOptional": true
+                },
+                {
+                  "name": "DraftRequestParameters",
+                  "isOptional": true
+                },
+                {
+                  "name": "Query",
+                  "value": "AppEvents\n| where TimeGenerated > ago(48h)\n| where Name in ('BatchTaskStart','BatchTaskFinished','BatchTaskFailure')\n| summarize Starts=countif(Name=='BatchTaskStart'), Finishes=countif(Name=='BatchTaskFinished'), Failures=countif(Name=='BatchTaskFailure') by TimeGenerated=bin(TimeGenerated,15m)\n| order by TimeGenerated asc\n| render timechart",
+                  "isOptional": true
+                },
+                {
+                  "name": "ControlType",
+                  "value": "FrameControlChart",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartTitle",
+                  "value": "Batch task activity",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartSubTitle",
+                  "value": "Starts, finishes, failures — last 48h",
+                  "isOptional": true
+                },
+                {
+                  "name": "IsQueryContainTimeRange",
+                  "value": true,
+                  "isOptional": true
+                },
+                {
+                  "name": "SpecificChart",
+                  "value": "Line",
+                  "isOptional": true
+                },
+                {
+                  "name": "Dimensions",
+                  "value": {
+                    "xAxis": {
+                      "name": "TimeGenerated",
+                      "type": "datetime"
+                    },
+                    "yAxis": [
+                      {
+                        "name": "Starts",
+                        "type": "long"
+                      },
+                      {
+                        "name": "Finishes",
+                        "type": "long"
+                      },
+                      {
+                        "name": "Failures",
+                        "type": "long"
+                      }
+                    ],
+                    "aggregation": "Sum"
+                  },
+                  "isOptional": true
+                },
+                {
+                  "name": "LegendOptions",
+                  "value": {
+                    "isEnabled": true,
+                    "position": "Bottom"
+                  },
+                  "isOptional": true
+                }
+              ],
+              "type": "Extension/Microsoft_OperationsManagementSuite_Workspace/PartType/LogsDashboardPart",
+              "settings": {}
+            }
+          },
+          {
+            "position": {
+              "x": 6,
+              "y": 3,
+              "colSpan": 6,
+              "rowSpan": 5
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "resourceTypeMode",
+                  "isOptional": true
+                },
+                {
+                  "name": "ComponentId",
+                  "isOptional": true
+                },
+                {
+                  "name": "Scope",
+                  "value": {
+                    "resourceIds": [
+                      "__REPLACE_WITH_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID__"
+                    ]
+                  },
+                  "isOptional": true
+                },
+                {
+                  "name": "PartId",
+                  "value": "7b64d124-65d6-42b7-a9b2-9342c07cc002",
+                  "isOptional": true
+                },
+                {
+                  "name": "Version",
+                  "value": "2.0",
+                  "isOptional": true
+                },
+                {
+                  "name": "TimeRange",
+                  "value": "P2D",
+                  "isOptional": true
+                },
+                {
+                  "name": "DashboardId",
+                  "isOptional": true
+                },
+                {
+                  "name": "DraftRequestParameters",
+                  "isOptional": true
+                },
+                {
+                  "name": "Query",
+                  "value": "AppEvents\n| where TimeGenerated > ago(48h)\n| where Name=='BatchTaskFailure'\n| extend p=Properties\n| project TimeGenerated, JobId=tostring(p.BatchJobId), TaskId=tostring(p.BatchJobTaskId), Caption=tostring(p.BatchJobCaption), ClassName=tostring(p.ClassName), Error=tostring(p.ExceptionMessage)\n| top 30 by TimeGenerated desc",
+                  "isOptional": true
+                },
+                {
+                  "name": "ControlType",
+                  "value": "AnalyticsGrid",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartTitle",
+                  "value": "Batch task failures",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartSubTitle",
+                  "value": "Most recent 30 — last 48h",
+                  "isOptional": true
+                },
+                {
+                  "name": "IsQueryContainTimeRange",
+                  "value": true,
+                  "isOptional": true
+                }
+              ],
+              "type": "Extension/Microsoft_OperationsManagementSuite_Workspace/PartType/LogsDashboardPart",
+              "settings": {}
+            }
+          },
+          {
+            "position": {
+              "x": 0,
+              "y": 8,
+              "colSpan": 6,
+              "rowSpan": 5
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "resourceTypeMode",
+                  "isOptional": true
+                },
+                {
+                  "name": "ComponentId",
+                  "isOptional": true
+                },
+                {
+                  "name": "Scope",
+                  "value": {
+                    "resourceIds": [
+                      "__REPLACE_WITH_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID__"
+                    ]
+                  },
+                  "isOptional": true
+                },
+                {
+                  "name": "PartId",
+                  "value": "7b64d124-65d6-42b7-a9b2-9342c07cc003",
+                  "isOptional": true
+                },
+                {
+                  "name": "Version",
+                  "value": "2.0",
+                  "isOptional": true
+                },
+                {
+                  "name": "TimeRange",
+                  "value": "P2D",
+                  "isOptional": true
+                },
+                {
+                  "name": "DashboardId",
+                  "isOptional": true
+                },
+                {
+                  "name": "DraftRequestParameters",
+                  "isOptional": true
+                },
+                {
+                  "name": "Query",
+                  "value": "AppEvents\n| where TimeGenerated > ago(48h)\n| where Name contains 'BatchJobOccurrence'\n| summarize Starts=countif(Name contains 'Start'),Completions=countif(Name contains 'Complet') by TimeGenerated=bin(TimeGenerated,30m)\n| order by TimeGenerated asc\n| render timechart",
+                  "isOptional": true
+                },
+                {
+                  "name": "ControlType",
+                  "value": "FrameControlChart",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartTitle",
+                  "value": "Job occurrence telemetry",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartSubTitle",
+                  "value": "Start/completed signals, if supported",
+                  "isOptional": true
+                },
+                {
+                  "name": "IsQueryContainTimeRange",
+                  "value": true,
+                  "isOptional": true
+                },
+                {
+                  "name": "SpecificChart",
+                  "value": "Line",
+                  "isOptional": true
+                },
+                {
+                  "name": "Dimensions",
+                  "value": {
+                    "xAxis": {
+                      "name": "TimeGenerated",
+                      "type": "datetime"
+                    },
+                    "yAxis": [
+                      {
+                        "name": "Starts",
+                        "type": "long"
+                      },
+                      {
+                        "name": "Completions",
+                        "type": "long"
+                      }
+                    ],
+                    "aggregation": "Sum"
+                  },
+                  "isOptional": true
+                },
+                {
+                  "name": "LegendOptions",
+                  "value": {
+                    "isEnabled": true,
+                    "position": "Bottom"
+                  },
+                  "isOptional": true
+                }
+              ],
+              "type": "Extension/Microsoft_OperationsManagementSuite_Workspace/PartType/LogsDashboardPart",
+              "settings": {}
+            }
+          },
+          {
+            "position": {
+              "x": 6,
+              "y": 8,
+              "colSpan": 6,
+              "rowSpan": 5
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "resourceTypeMode",
+                  "isOptional": true
+                },
+                {
+                  "name": "ComponentId",
+                  "isOptional": true
+                },
+                {
+                  "name": "Scope",
+                  "value": {
+                    "resourceIds": [
+                      "__REPLACE_WITH_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID__"
+                    ]
+                  },
+                  "isOptional": true
+                },
+                {
+                  "name": "PartId",
+                  "value": "7b64d124-65d6-42b7-a9b2-9342c07cc004",
+                  "isOptional": true
+                },
+                {
+                  "name": "Version",
+                  "value": "2.0",
+                  "isOptional": true
+                },
+                {
+                  "name": "TimeRange",
+                  "value": "P2D",
+                  "isOptional": true
+                },
+                {
+                  "name": "DashboardId",
+                  "isOptional": true
+                },
+                {
+                  "name": "DraftRequestParameters",
+                  "isOptional": true
+                },
+                {
+                  "name": "Query",
+                  "value": "AppEvents\n| where TimeGenerated > ago(48h)\n| where Name == 'BatchThreadInfo'\n| extend info=parse_json(tostring(Properties.InfoMessage))\n| extend ActiveTasks=toint(info.CurrentBatchTasks), QueuedTasks=toint(info.TaskQueueCount)\n| summarize ActiveTasks=max(ActiveTasks),QueuedTasks=max(QueuedTasks) by TimeGenerated=bin(TimeGenerated,15m)\n| order by TimeGenerated asc\n| render timechart",
+                  "isOptional": true
+                },
+                {
+                  "name": "ControlType",
+                  "value": "FrameControlChart",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartTitle",
+                  "value": "Batch threads and queue",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartSubTitle",
+                  "value": "Observed thread telemetry, per 15-minute bucket",
+                  "isOptional": true
+                },
+                {
+                  "name": "IsQueryContainTimeRange",
+                  "value": true,
+                  "isOptional": true
+                },
+                {
+                  "name": "SpecificChart",
+                  "value": "Line",
+                  "isOptional": true
+                },
+                {
+                  "name": "Dimensions",
+                  "value": {
+                    "xAxis": {
+                      "name": "TimeGenerated",
+                      "type": "datetime"
+                    },
+                    "yAxis": [
+                      {
+                        "name": "ActiveTasks",
+                        "type": "long"
+                      },
+                      {
+                        "name": "QueuedTasks",
+                        "type": "long"
+                      }
+                    ],
+                    "aggregation": "Sum"
+                  },
+                  "isOptional": true
+                },
+                {
+                  "name": "LegendOptions",
+                  "value": {
+                    "isEnabled": true,
+                    "position": "Bottom"
+                  },
+                  "isOptional": true
+                }
+              ],
+              "type": "Extension/Microsoft_OperationsManagementSuite_Workspace/PartType/LogsDashboardPart",
+              "settings": {}
+            }
+          },
+          {
+            "position": {
+              "x": 0,
+              "y": 13,
+              "colSpan": 6,
+              "rowSpan": 5
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "resourceTypeMode",
+                  "isOptional": true
+                },
+                {
+                  "name": "ComponentId",
+                  "isOptional": true
+                },
+                {
+                  "name": "Scope",
+                  "value": {
+                    "resourceIds": [
+                      "__REPLACE_WITH_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID__"
+                    ]
+                  },
+                  "isOptional": true
+                },
+                {
+                  "name": "PartId",
+                  "value": "7b64d124-65d6-42b7-a9b2-9342c07cc005",
+                  "isOptional": true
+                },
+                {
+                  "name": "Version",
+                  "value": "2.0",
+                  "isOptional": true
+                },
+                {
+                  "name": "TimeRange",
+                  "value": "P2D",
+                  "isOptional": true
+                },
+                {
+                  "name": "DashboardId",
+                  "isOptional": true
+                },
+                {
+                  "name": "DraftRequestParameters",
+                  "isOptional": true
+                },
+                {
+                  "name": "Query",
+                  "value": "AppEvents\n| where TimeGenerated > ago(48h)\n| where Name in ('DMFImportJobStart','DMFImportJobEnd','DMFExportJobStart','DMFExportJobEnd','DMFError')\n| summarize ImportsStarted=countif(Name=='DMFImportJobStart'), ImportsEnded=countif(Name=='DMFImportJobEnd'), ExportsStarted=countif(Name=='DMFExportJobStart'), ExportsEnded=countif(Name=='DMFExportJobEnd'), DMFErrors=countif(Name=='DMFError') by TimeGenerated=bin(TimeGenerated,1h)\n| order by TimeGenerated asc\n| render timechart",
+                  "isOptional": true
+                },
+                {
+                  "name": "ControlType",
+                  "value": "FrameControlChart",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartTitle",
+                  "value": "DMF import/export activity",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartSubTitle",
+                  "value": "Starts, ends, DMF errors — last 48h",
+                  "isOptional": true
+                },
+                {
+                  "name": "IsQueryContainTimeRange",
+                  "value": true,
+                  "isOptional": true
+                },
+                {
+                  "name": "SpecificChart",
+                  "value": "Line",
+                  "isOptional": true
+                },
+                {
+                  "name": "Dimensions",
+                  "value": {
+                    "xAxis": {
+                      "name": "TimeGenerated",
+                      "type": "datetime"
+                    },
+                    "yAxis": [
+                      {
+                        "name": "ImportsStarted",
+                        "type": "long"
+                      },
+                      {
+                        "name": "ImportsEnded",
+                        "type": "long"
+                      },
+                      {
+                        "name": "ExportsStarted",
+                        "type": "long"
+                      },
+                      {
+                        "name": "ExportsEnded",
+                        "type": "long"
+                      },
+                      {
+                        "name": "DMFErrors",
+                        "type": "long"
+                      }
+                    ],
+                    "aggregation": "Sum"
+                  },
+                  "isOptional": true
+                },
+                {
+                  "name": "LegendOptions",
+                  "value": {
+                    "isEnabled": true,
+                    "position": "Bottom"
+                  },
+                  "isOptional": true
+                }
+              ],
+              "type": "Extension/Microsoft_OperationsManagementSuite_Workspace/PartType/LogsDashboardPart",
+              "settings": {}
+            }
+          },
+          {
+            "position": {
+              "x": 6,
+              "y": 13,
+              "colSpan": 6,
+              "rowSpan": 5
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "resourceTypeMode",
+                  "isOptional": true
+                },
+                {
+                  "name": "ComponentId",
+                  "isOptional": true
+                },
+                {
+                  "name": "Scope",
+                  "value": {
+                    "resourceIds": [
+                      "__REPLACE_WITH_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID__"
+                    ]
+                  },
+                  "isOptional": true
+                },
+                {
+                  "name": "PartId",
+                  "value": "7b64d124-65d6-42b7-a9b2-9342c07cc006",
+                  "isOptional": true
+                },
+                {
+                  "name": "Version",
+                  "value": "2.0",
+                  "isOptional": true
+                },
+                {
+                  "name": "TimeRange",
+                  "value": "P2D",
+                  "isOptional": true
+                },
+                {
+                  "name": "DashboardId",
+                  "isOptional": true
+                },
+                {
+                  "name": "DraftRequestParameters",
+                  "isOptional": true
+                },
+                {
+                  "name": "Query",
+                  "value": "AppEvents\n| where TimeGenerated > ago(48h)\n| where Name == 'DMFError'\n| extend p=Properties\n| project TimeGenerated,Project=tostring(p.DataProjectName),Entity=tostring(p.EntityName),ExecutionId=tostring(p.ExecutionId),JobId=tostring(p.BatchJobId),Error=tostring(p.ErrorMessage)\n| top 30 by TimeGenerated desc",
+                  "isOptional": true
+                },
+                {
+                  "name": "ControlType",
+                  "value": "AnalyticsGrid",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartTitle",
+                  "value": "DMF errors",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartSubTitle",
+                  "value": "Last 30 DMF errors — last 48h",
+                  "isOptional": true
+                },
+                {
+                  "name": "IsQueryContainTimeRange",
+                  "value": true,
+                  "isOptional": true
+                }
+              ],
+              "type": "Extension/Microsoft_OperationsManagementSuite_Workspace/PartType/LogsDashboardPart",
+              "settings": {}
+            }
+          },
+          {
+            "position": {
+              "x": 0,
+              "y": 18,
+              "colSpan": 6,
+              "rowSpan": 4
+            },
+            "metadata": {
+              "inputs": [
+                {
+                  "name": "resourceTypeMode",
+                  "isOptional": true
+                },
+                {
+                  "name": "ComponentId",
+                  "isOptional": true
+                },
+                {
+                  "name": "Scope",
+                  "value": {
+                    "resourceIds": [
+                      "__REPLACE_WITH_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID__"
+                    ]
+                  },
+                  "isOptional": true
+                },
+                {
+                  "name": "PartId",
+                  "value": "7b64d124-65d6-42b7-a9b2-9342c07cc007",
+                  "isOptional": true
+                },
+                {
+                  "name": "Version",
+                  "value": "2.0",
+                  "isOptional": true
+                },
+                {
+                  "name": "TimeRange",
+                  "value": "P2D",
+                  "isOptional": true
+                },
+                {
+                  "name": "DashboardId",
+                  "isOptional": true
+                },
+                {
+                  "name": "DraftRequestParameters",
+                  "isOptional": true
+                },
+                {
+                  "name": "Query",
+                  "value": "AppEvents\n| where TimeGenerated > ago(7d) and _IsBillable =~ 'true'\n| summarize IngestedGiB=round(sum(_BilledSize)/1073741824.0,4) by TimeGenerated=bin(TimeGenerated,1d)\n| order by TimeGenerated asc\n| render timechart",
+                  "isOptional": true
+                },
+                {
+                  "name": "ControlType",
+                  "value": "FrameControlChart",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartTitle",
+                  "value": "Billable AppEvents volume",
+                  "isOptional": true
+                },
+                {
+                  "name": "PartSubTitle",
+                  "value": "Last 7 days, not total workspace charges",
+                  "isOptional": true
+                },
+                {
+                  "name": "IsQueryContainTimeRange",
+                  "value": true,
+                  "isOptional": true
+                },
+                {
+                  "name": "SpecificChart",
+                  "value": "Line",
+                  "isOptional": true
+                },
+                {
+                  "name": "Dimensions",
+                  "value": {
+                    "xAxis": {
+                      "name": "TimeGenerated",
+                      "type": "datetime"
+                    },
+                    "yAxis": [
+                      {
+                        "name": "IngestedGiB",
+                        "type": "real"
+                      }
+                    ],
+                    "aggregation": "Sum"
+                  },
+                  "isOptional": true
+                },
+                {
+                  "name": "LegendOptions",
+                  "value": {
+                    "isEnabled": true,
+                    "position": "Bottom"
+                  },
+                  "isOptional": true
+                }
+              ],
+              "type": "Extension/Microsoft_OperationsManagementSuite_Workspace/PartType/LogsDashboardPart",
+              "settings": {}
+            }
+          },
+          {
+            "position": {
+              "x": 6,
+              "y": 18,
+              "colSpan": 6,
+              "rowSpan": 4
+            },
+            "metadata": {
+              "inputs": [],
+              "type": "Extension/HubsExtension/PartType/MarkdownPart",
+              "settings": {
+                "content": {
+                  "settings": {
+                    "content": "**Before importing** replace `__REPLACE_WITH_LOG_ANALYTICS_WORKSPACE_RESOURCE_ID__` with your workspace's full Azure resource ID throughout this file.\n\n- Some signals require recent D365 F&O builds and must be enabled in **Monitoring and Telemetry parameters**.\n- This dashboard uses a **rolling 48-hour lookback**. Use the workbook for an exact 1–2 PM incident window.\n- If the workspace contains other applications, filter these queries by the UAT Application Insights `_ResourceId` before sharing the dashboard.\n- Import does not enable telemetry, create workspaces, or set retention/caps.",
+                    "title": "Setup & interpretation",
+                    "subtitle": "Read before production use",
+                    "markdownUri": null
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "model": {}
+    }
+  },
+  "name": "d365-fo-batch-operations-uat",
+  "type": "Microsoft.Portal/dashboards",
+  "location": "eastus",
+  "tags": {
+    "hidden-title": "D365 F&O — Batch & DMF Operations (UAT)"
+  }
+}
