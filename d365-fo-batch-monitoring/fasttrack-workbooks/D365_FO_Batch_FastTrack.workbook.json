@@ -4,7 +4,7 @@
     {
       "type": 1,
       "content": {
-        "json": "# D365 F&O · Batch Operations & Incident Explorer — Hierarchy Edition\n\nSelect a **Custom incident date and time** (such as 1:00–2:00 PM Eastern), then expand the **JOB → TASK → RUN** rows below. It includes task executions whose intervals overlap the window, even when they started earlier. Start/finish columns are in **America/New_York** (ET, respecting DST).\n\n**Interpretation:** Job and task nodes summarize **observed telemetry**, not authoritative current F&O batch status. \"Finish not observed\" is a diagnostic clue, not proof that a task is still executing. Parent **JOB** represents a batch job ID across all selected executions; without verified occurrence IDs, repeated parent job runs are **not** separated into distinct run nodes.\n\nFor discovering competing work, leave the optional Job ID filter **blank**. A job cannot be discovered if its telemetry was discarded before ingestion. The tree requires task events carrying `activityId`; see the schema-check panels below.\n\n## FastTrack conversion\nThe Microsoft FastTrack Batch ADX dashboard panels appear below the incident explorer. This workbook queries Application Insights directly and does not require an ADX cluster. Counts of task-start events are NOT concurrent running-task counts. Batch-throttling events may lack a usable BatchJobId; avoid interpreting job-filtered throttling as comprehensive."
+        "json": "# D365 F&O · Batch Operations & Incident Explorer — Hierarchy Edition\n\nSelect a **Custom incident date and time** (such as 1:00–2:00 PM Eastern), then expand the **JOB → TASK → RUN** rows below. It includes task executions whose intervals overlap the window, even when they started earlier. Start/finish columns are in **America/New_York** (ET, respecting DST).\n\n**Interpretation:** Job and task nodes summarize **observed telemetry**, not authoritative current F&O batch status. \"Finish not observed\" is a diagnostic clue, not proof that a task is still executing. Parent **JOB** represents a batch job ID across all selected executions; without verified occurrence IDs, repeated parent job runs are **not** separated into distinct run nodes.\n\nFor discovering competing work, leave the optional Job ID filter **blank**. A job cannot be discovered if its telemetry was discarded before ingestion. The tree requires task events carrying `activityId`; see the schema-check panels below.\n\n## FastTrack conversion\nThe Microsoft FastTrack Batch ADX dashboard panels appear below the incident explorer. This workbook queries Application Insights directly and does not require an ADX cluster. Counts of task-start events are NOT concurrent running-task counts. Batch-throttling events may lack a usable BatchJobId; avoid interpreting job-filtered throttling as comprehensive.\n\n**v2 notes:** Global throttling and task-start charts are not restricted by Batch Job ID because BatchThrottled events often do not identify the job. These are *event counts*, not the number of concurrently running tasks. The Activity ID filter applies to the hierarchy, execution, and error-detail panels only. The hierarchy intentionally uses a wider fetch interval than the incident selection to detect task spans crossing the start boundary; it is not proof of current batch status."
       },
       "name": "text - D365 F&O · Batch Operations & Incident Explorer"
     },
@@ -93,7 +93,7 @@
             "value": "60"
           },
           {
-            "id": "param-EnvironmentIdFilter",
+            "id": "f2a00000-ba7c-4e21-a321-000000000006",
             "version": "KqlParameterItem/1.0",
             "name": "EnvironmentIdFilter",
             "label": "Optional F&O environment ID",
@@ -101,10 +101,10 @@
             "value": ""
           },
           {
-            "id": "param-ActivityIdFilter",
+            "id": "f2a00000-ba7c-4e21-a321-000000000007",
             "version": "KqlParameterItem/1.0",
             "name": "ActivityIdFilter",
-            "label": "Optional activity ID",
+            "label": "Optional activity ID (task execution/error detail panels)",
             "type": 1,
             "value": ""
           }
@@ -126,7 +126,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "// F&O built-in batch task telemetry. Application Insights Logs (customEvents).\nlet incidentStart = {TimeRange:start};\nlet incidentEnd = {TimeRange:end};\nlet backDays = min_of(7, max_of(1, toint('{TaskLookbackDays}')));\nlet filterId = trim(' ', '{JobIdFilter}');\nlet raw = materialize(\n    customEvents\n    | where timestamp between ((incidentStart - backDays * 1d) .. min_of(now(), incidentEnd + backDays * 1d))\n    | where name in ('BatchTaskStart','BatchTaskFinished','BatchTaskFailure')\n    | extend d = customDimensions\n    | extend ActivityId = tostring(d['activityId']),\n             BatchJobId = tostring(d['BatchJobId']),\n             BatchTaskId = iif(isnotempty(tostring(d['BatchJobTaskId'])), tostring(d['BatchJobTaskId']), tostring(d['BatchTaskId'])),\n             ClassName = tostring(d['ClassName']),\n             Caption = tostring(d['BatchJobCaption']),\n             RoleInstance = tostring(cloud_RoleInstance)\n    | where isempty(filterId) or BatchJobId == filterId\n    | where isnotempty(ActivityId) // avoid false joins across recurring executions\n);\nlet spans = materialize(\n    raw\n    | summarize StartTime = minif(timestamp, name == 'BatchTaskStart'),\n                EndTime = maxif(timestamp, name == 'BatchTaskFinished'),\n                FailureTime = maxif(timestamp, name == 'BatchTaskFailure'),\n                StartSignals = countif(name == 'BatchTaskStart'),\n                FinishSignals = countif(name == 'BatchTaskFinished'),\n                Failures = countif(name == 'BatchTaskFailure'),\n                BatchJobId = take_any(BatchJobId),\n                BatchTaskId = take_any(BatchTaskId),\n                ClassName = take_any(ClassName),\n                Caption = take_any(Caption),\n                RoleInstance = take_any(RoleInstance)\n        by ActivityId\n    | extend EffectiveStart = coalesce(StartTime, FailureTime, EndTime),\n             EffectiveEnd = coalesce(EndTime, FailureTime, incidentEnd)\n    | where isnotnull(EffectiveStart) and EffectiveStart < incidentEnd and EffectiveEnd >= incidentStart\n    | extend Minutes = iff(isnotnull(StartTime) and isnotnull(EndTime), round((EndTime-StartTime)/1m, 2), real(null)),\n             State = case(Failures > 0, 'Failure signal observed', FinishSignals > 0, 'Finished', StartSignals > 0, 'No finish observed', 'Incomplete telemetry')\n);\n// Three-level tree: a logical job -> each BatchTaskId -> correlated task executions.\n// Task ActivityId is the execution correlation key in Microsoft's FastTrack sample.\n // The job node is a logical batch job (not a verified occurrence/run).\nlet visibleSpans = materialize(\n    spans\n    | extend GroupJobId = iff(isempty(BatchJobId), '(job ID missing)', BatchJobId),\n             TaskKey = iff(isempty(BatchTaskId), strcat('(task ID missing) ', ActivityId), BatchTaskId)\n    | extend JobNodeId = strcat('JOB|', GroupJobId),\n             TaskNodeId = strcat('TASK|', GroupJobId, '|', TaskKey),\n             ExecutionNodeId = strcat('EXEC|', GroupJobId, '|', TaskKey, '|', ActivityId)\n);\nlet jobNodes =\n    visibleSpans\n    | summarize TaskExecutions=count(),\n                FailureSignals=sum(Failures),\n                MissingFinishes=countif(StartSignals > 0 and FinishSignals == 0),\n                FirstStarted=min(EffectiveStart),\n                LastFinished=max(EndTime),\n                JobCaption=take_any(Caption)\n        by GroupJobId, JobNodeId\n    | extend Observation=case(FailureSignals > 0, 'Task failure event(s)',\n                              MissingFinishes > 0, 'Task finish not observed',\n                              'All observed task executions have finishes')\n    | project Id=JobNodeId, ParentId='',\n              Name=strcat('JOB ', GroupJobId, iff(isempty(JobCaption),'',strcat(' · ', JobCaption))),\n              Level='1 · Job', Observation,\n              TaskExecutions=tolong(TaskExecutions), FailureSignals=tolong(FailureSignals),\n              MissingFinishes=tolong(MissingFinishes),\n              StartedEastern=datetime_utc_to_local(FirstStarted,'America/New_York'),\n              FinishedEastern=datetime_utc_to_local(LastFinished,'America/New_York'),\n              DurationMinutes=real(null),\n              BatchJobId=GroupJobId, BatchTaskId='', ClassName='', ActivityId='';\nlet taskNodes =\n    visibleSpans\n    | summarize TaskExecutions=count(),\n                FailureSignals=sum(Failures),\n                MissingFinishes=countif(StartSignals > 0 and FinishSignals == 0),\n                FirstStarted=min(EffectiveStart),\n                LastFinished=max(EndTime),\n                AnyClassName=take_any(ClassName)\n        by GroupJobId, TaskKey, TaskNodeId, JobNodeId\n    | extend Observation=case(FailureSignals > 0, 'Task failure event(s)',\n                              MissingFinishes > 0, 'Task finish not observed',\n                              'All observed executions have finishes')\n    | project Id=TaskNodeId, ParentId=JobNodeId,\n              Name=strcat('TASK ', TaskKey, iff(isempty(AnyClassName),'',strcat(' · ', AnyClassName))),\n              Level='2 · Task', Observation,\n              TaskExecutions=tolong(TaskExecutions), FailureSignals=tolong(FailureSignals),\n              MissingFinishes=tolong(MissingFinishes),\n              StartedEastern=datetime_utc_to_local(FirstStarted,'America/New_York'),\n              FinishedEastern=datetime_utc_to_local(LastFinished,'America/New_York'),\n              DurationMinutes=real(null),\n              BatchJobId=GroupJobId, BatchTaskId=TaskKey, ClassName=AnyClassName, ActivityId='';\nlet executionNodes =\n    visibleSpans\n    | project Id=ExecutionNodeId, ParentId=TaskNodeId,\n              Name=strcat('RUN ',format_datetime(datetime_utc_to_local(EffectiveStart,'America/New_York'),'yyyy-MM-dd HH:mm'),\n                          ' ET · ', substring(ActivityId,0,12)),\n              Level='3 · Execution', Observation=State,\n              TaskExecutions=tolong(1), FailureSignals=tolong(Failures),\n              MissingFinishes=tolong(iff(StartSignals>0 and FinishSignals==0, 1, 0)),\n              StartedEastern=datetime_utc_to_local(StartTime,'America/New_York'),\n              FinishedEastern=datetime_utc_to_local(EndTime,'America/New_York'),\n              DurationMinutes=Minutes,\n              BatchJobId=GroupJobId, BatchTaskId=TaskKey, ClassName, ActivityId;\nunion jobNodes, taskNodes, executionNodes\n| extend SortLevel=case(Level startswith '1',0,Level startswith '2',1,2)\n| sort by BatchJobId asc, SortLevel asc, StartedEastern asc\n| project-away SortLevel\n",
+        "query": "// F&O built-in batch task telemetry. Application Insights Logs (customEvents).\nlet incidentStart = {TimeRange:start};\nlet incidentEnd = {TimeRange:end};\nlet backDays = min_of(7, max_of(1, toint('{TaskLookbackDays}')));\nlet filterId = trim(' ', '{JobIdFilter}');\nlet raw = materialize(\n    customEvents\n    | where timestamp between ((incidentStart - backDays * 1d) .. min_of(now(), incidentEnd + backDays * 1d))\n    | where name in ('BatchTaskStart','BatchTaskFinished','BatchTaskFailure')\n    | extend d = customDimensions\n    | extend ActivityId = tostring(d['activityId']),\n             BatchJobId = tostring(d['BatchJobId']),\n             BatchTaskId = iif(isnotempty(tostring(d['BatchJobTaskId'])), tostring(d['BatchJobTaskId']), tostring(d['BatchTaskId'])),\n             ClassName = tostring(d['ClassName']),\n             Caption = tostring(d['BatchJobCaption']),\n             RoleInstance = tostring(cloud_RoleInstance)\n    | where isempty(filterId) or BatchJobId == filterId\n    | where isempty('{ActivityIdFilter:escape}') or ActivityId == '{ActivityIdFilter:escape}'\n    | where isnotempty(ActivityId) // avoid false joins across recurring executions\n);\nlet spans = materialize(\n    raw\n    | summarize StartTime = minif(timestamp, name == 'BatchTaskStart'),\n                EndTime = maxif(timestamp, name == 'BatchTaskFinished'),\n                FailureTime = maxif(timestamp, name == 'BatchTaskFailure'),\n                StartSignals = countif(name == 'BatchTaskStart'),\n                FinishSignals = countif(name == 'BatchTaskFinished'),\n                Failures = countif(name == 'BatchTaskFailure'),\n                BatchJobId = take_any(BatchJobId),\n                BatchTaskId = take_any(BatchTaskId),\n                ClassName = take_any(ClassName),\n                Caption = take_any(Caption),\n                RoleInstance = take_any(RoleInstance)\n        by ActivityId\n    | extend EffectiveStart = coalesce(StartTime, FailureTime, EndTime),\n             EffectiveEnd = coalesce(EndTime, FailureTime, incidentEnd)\n    | where isnotnull(EffectiveStart) and EffectiveStart < incidentEnd and EffectiveEnd >= incidentStart\n    | extend Minutes = iff(isnotnull(StartTime) and isnotnull(EndTime), round((EndTime-StartTime)/1m, 2), real(null)),\n             State = case(Failures > 0, 'Failure signal observed', FinishSignals > 0, 'Finished', StartSignals > 0, 'No finish observed', 'Incomplete telemetry')\n);\n// Three-level tree: a logical job -> each BatchTaskId -> correlated task executions.\n// Task ActivityId is the execution correlation key in Microsoft's FastTrack sample.\n // The job node is a logical batch job (not a verified occurrence/run).\nlet visibleSpans = materialize(\n    spans\n    | extend GroupJobId = iff(isempty(BatchJobId), '(job ID missing)', BatchJobId),\n             TaskKey = iff(isempty(BatchTaskId), strcat('(task ID missing) ', ActivityId), BatchTaskId)\n    | extend JobNodeId = strcat('JOB|', GroupJobId),\n             TaskNodeId = strcat('TASK|', GroupJobId, '|', TaskKey),\n             ExecutionNodeId = strcat('EXEC|', GroupJobId, '|', TaskKey, '|', ActivityId)\n);\nlet jobNodes =\n    visibleSpans\n    | summarize TaskExecutions=count(),\n                FailureSignals=sum(Failures),\n                MissingFinishes=countif(StartSignals > 0 and FinishSignals == 0),\n                FirstStarted=min(EffectiveStart),\n                LastFinished=max(EndTime),\n                JobCaption=take_any(Caption)\n        by GroupJobId, JobNodeId\n    | extend Observation=case(FailureSignals > 0, 'Task failure event(s)',\n                              MissingFinishes > 0, 'Task finish not observed',\n                              'All observed task executions have finishes')\n    | project Id=JobNodeId, ParentId='',\n              Name=strcat('JOB ', GroupJobId, iff(isempty(JobCaption),'',strcat(' · ', JobCaption))),\n              Level='1 · Job', Observation,\n              TaskExecutions=tolong(TaskExecutions), FailureSignals=tolong(FailureSignals),\n              MissingFinishes=tolong(MissingFinishes),\n              StartedEastern=datetime_utc_to_local(FirstStarted,'America/New_York'),\n              FinishedEastern=datetime_utc_to_local(LastFinished,'America/New_York'),\n              DurationMinutes=real(null),\n              BatchJobId=GroupJobId, BatchTaskId='', ClassName='', ActivityId='';\nlet taskNodes =\n    visibleSpans\n    | summarize TaskExecutions=count(),\n                FailureSignals=sum(Failures),\n                MissingFinishes=countif(StartSignals > 0 and FinishSignals == 0),\n                FirstStarted=min(EffectiveStart),\n                LastFinished=max(EndTime),\n                AnyClassName=take_any(ClassName)\n        by GroupJobId, TaskKey, TaskNodeId, JobNodeId\n    | extend Observation=case(FailureSignals > 0, 'Task failure event(s)',\n                              MissingFinishes > 0, 'Task finish not observed',\n                              'All observed executions have finishes')\n    | project Id=TaskNodeId, ParentId=JobNodeId,\n              Name=strcat('TASK ', TaskKey, iff(isempty(AnyClassName),'',strcat(' · ', AnyClassName))),\n              Level='2 · Task', Observation,\n              TaskExecutions=tolong(TaskExecutions), FailureSignals=tolong(FailureSignals),\n              MissingFinishes=tolong(MissingFinishes),\n              StartedEastern=datetime_utc_to_local(FirstStarted,'America/New_York'),\n              FinishedEastern=datetime_utc_to_local(LastFinished,'America/New_York'),\n              DurationMinutes=real(null),\n              BatchJobId=GroupJobId, BatchTaskId=TaskKey, ClassName=AnyClassName, ActivityId='';\nlet executionNodes =\n    visibleSpans\n    | project Id=ExecutionNodeId, ParentId=TaskNodeId,\n              Name=strcat('RUN ',format_datetime(datetime_utc_to_local(EffectiveStart,'America/New_York'),'yyyy-MM-dd HH:mm'),\n                          ' ET · ', substring(ActivityId,0,12)),\n              Level='3 · Execution', Observation=State,\n              TaskExecutions=tolong(1), FailureSignals=tolong(Failures),\n              MissingFinishes=tolong(iff(StartSignals>0 and FinishSignals==0, 1, 0)),\n              StartedEastern=datetime_utc_to_local(StartTime,'America/New_York'),\n              FinishedEastern=datetime_utc_to_local(EndTime,'America/New_York'),\n              DurationMinutes=Minutes,\n              BatchJobId=GroupJobId, BatchTaskId=TaskKey, ClassName, ActivityId;\nunion jobNodes, taskNodes, executionNodes\n| extend SortLevel=case(Level startswith '1',0,Level startswith '2',1,2)\n| sort by BatchJobId asc, SortLevel asc, StartedEastern asc\n| project-away SortLevel\n",
         "size": 0,
         "title": "Batch jobs → tasks → executions (expand the job and task rows)",
         "noDataMessage": "No matching telemetry in this time range. Check that the events are enabled and the Application Insights resource is selected.",
@@ -215,11 +215,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "timechart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       },
       "name": "query - Batch task event counts (5-minute bins)"
     },
@@ -227,7 +228,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let incidentStart={TimeRange:start};\nlet incidentEnd={TimeRange:end};\nlet filterId=trim(' ','{JobIdFilter}');\ncustomEvents\n| where timestamp between (incidentStart .. incidentEnd)\n| where name == 'BatchTaskFailure'\n| extend d=customDimensions\n| extend BatchJobId=tostring(d['BatchJobId'])\n| where isempty(filterId) or BatchJobId==filterId\n| extend EventEastern=datetime_utc_to_local(timestamp,'America/New_York')\n| project EventEastern, BatchJobId, Caption=tostring(d['BatchJobCaption']), ClassName=tostring(d['ClassName']), BatchTaskId=tostring(d['BatchTaskId']), EventMessage=tostring(d['EventMessage']), ExceptionType=tostring(d['ExceptionType']), ExceptionMessage=tostring(d['ExceptionMessage']), ActivityId=tostring(d['activityId']), RoleInstance=cloud_RoleInstance, CallStack=tostring(d['CallStack'])\n| order by EventEastern desc",
+        "query": "let incidentStart={TimeRange:start};\nlet incidentEnd={TimeRange:end};\nlet filterId=trim(' ','{JobIdFilter}');\ncustomEvents\n| where timestamp between (incidentStart .. incidentEnd)\n| where name == 'BatchTaskFailure'\n| extend d=customDimensions\n| extend BatchJobId=tostring(d['BatchJobId'])\n| where isempty(filterId) or BatchJobId==filterId\n| where isempty('{ActivityIdFilter:escape}') or tostring(d['activityId']) == '{ActivityIdFilter:escape}'\n| extend EventEastern=datetime_utc_to_local(timestamp,'America/New_York')\n| project EventEastern, BatchJobId, Caption=tostring(d['BatchJobCaption']), ClassName=tostring(d['ClassName']), BatchTaskId=tostring(d['BatchTaskId']), EventMessage=tostring(d['EventMessage']), ExceptionType=tostring(d['ExceptionType']), ExceptionMessage=tostring(d['ExceptionMessage']), ActivityId=tostring(d['activityId']), RoleInstance=cloud_RoleInstance, CallStack=tostring(d['CallStack'])\n| order by EventEastern desc",
         "size": 0,
         "title": "Batch task failure diagnostics",
         "noDataMessage": "No matching telemetry in this time range. Check that the events are enabled and the Application Insights resource is selected.",
@@ -238,11 +239,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "table",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       },
       "name": "query - Batch task failure diagnostics"
     },
@@ -257,7 +259,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "// F&O built-in batch task telemetry. Application Insights Logs (customEvents).\nlet incidentStart = {TimeRange:start};\nlet incidentEnd = {TimeRange:end};\nlet backDays = min_of(7, max_of(1, toint('{TaskLookbackDays}')));\nlet filterId = trim(' ', '{JobIdFilter}');\nlet raw = materialize(\n    customEvents\n    | where timestamp between ((incidentStart - backDays * 1d) .. min_of(now(), incidentEnd + backDays * 1d))\n    | where name in ('BatchTaskStart','BatchTaskFinished','BatchTaskFailure')\n    | extend d = customDimensions\n    | extend ActivityId = tostring(d['activityId']),\n             BatchJobId = tostring(d['BatchJobId']),\n             BatchTaskId = iif(isnotempty(tostring(d['BatchJobTaskId'])), tostring(d['BatchJobTaskId']), tostring(d['BatchTaskId'])),\n             ClassName = tostring(d['ClassName']),\n             Caption = tostring(d['BatchJobCaption']),\n             RoleInstance = tostring(cloud_RoleInstance)\n    | where isempty(filterId) or BatchJobId == filterId\n    | where isnotempty(ActivityId) // avoid false joins across recurring executions\n);\nlet spans = materialize(\n    raw\n    | summarize StartTime = minif(timestamp, name == 'BatchTaskStart'),\n                EndTime = maxif(timestamp, name == 'BatchTaskFinished'),\n                FailureTime = maxif(timestamp, name == 'BatchTaskFailure'),\n                StartSignals = countif(name == 'BatchTaskStart'),\n                FinishSignals = countif(name == 'BatchTaskFinished'),\n                Failures = countif(name == 'BatchTaskFailure'),\n                BatchJobId = take_any(BatchJobId),\n                BatchTaskId = take_any(BatchTaskId),\n                ClassName = take_any(ClassName),\n                Caption = take_any(Caption),\n                RoleInstance = take_any(RoleInstance)\n        by ActivityId\n    | extend EffectiveStart = coalesce(StartTime, FailureTime, EndTime),\n             EffectiveEnd = coalesce(EndTime, FailureTime, incidentEnd)\n    | where isnotnull(EffectiveStart) and EffectiveStart < incidentEnd and EffectiveEnd >= incidentStart\n    | extend Minutes = iff(isnotnull(StartTime) and isnotnull(EndTime), round((EndTime-StartTime)/1m, 2), real(null)),\n             State = case(Failures > 0, 'Failure signal observed', FinishSignals > 0, 'Finished', StartSignals > 0, 'No finish observed', 'Incomplete telemetry')\n);\nspans\n| where isnotnull(Minutes)\n| extend StartEastern = datetime_utc_to_local(StartTime, 'America/New_York'),\n         EndEastern = datetime_utc_to_local(EndTime, 'America/New_York')\n| project BatchJobId, Caption, BatchTaskId, ClassName, StartEastern, EndEastern, Minutes, State, ActivityId\n| top 40 by Minutes desc",
+        "query": "// F&O built-in batch task telemetry. Application Insights Logs (customEvents).\nlet incidentStart = {TimeRange:start};\nlet incidentEnd = {TimeRange:end};\nlet backDays = min_of(7, max_of(1, toint('{TaskLookbackDays}')));\nlet filterId = trim(' ', '{JobIdFilter}');\nlet raw = materialize(\n    customEvents\n    | where timestamp between ((incidentStart - backDays * 1d) .. min_of(now(), incidentEnd + backDays * 1d))\n    | where name in ('BatchTaskStart','BatchTaskFinished','BatchTaskFailure')\n    | extend d = customDimensions\n    | extend ActivityId = tostring(d['activityId']),\n             BatchJobId = tostring(d['BatchJobId']),\n             BatchTaskId = iif(isnotempty(tostring(d['BatchJobTaskId'])), tostring(d['BatchJobTaskId']), tostring(d['BatchTaskId'])),\n             ClassName = tostring(d['ClassName']),\n             Caption = tostring(d['BatchJobCaption']),\n             RoleInstance = tostring(cloud_RoleInstance)\n    | where isempty(filterId) or BatchJobId == filterId\n    | where isempty('{ActivityIdFilter:escape}') or ActivityId == '{ActivityIdFilter:escape}'\n    | where isnotempty(ActivityId) // avoid false joins across recurring executions\n);\nlet spans = materialize(\n    raw\n    | summarize StartTime = minif(timestamp, name == 'BatchTaskStart'),\n                EndTime = maxif(timestamp, name == 'BatchTaskFinished'),\n                FailureTime = maxif(timestamp, name == 'BatchTaskFailure'),\n                StartSignals = countif(name == 'BatchTaskStart'),\n                FinishSignals = countif(name == 'BatchTaskFinished'),\n                Failures = countif(name == 'BatchTaskFailure'),\n                BatchJobId = take_any(BatchJobId),\n                BatchTaskId = take_any(BatchTaskId),\n                ClassName = take_any(ClassName),\n                Caption = take_any(Caption),\n                RoleInstance = take_any(RoleInstance)\n        by ActivityId\n    | extend EffectiveStart = coalesce(StartTime, FailureTime, EndTime),\n             EffectiveEnd = coalesce(EndTime, FailureTime, incidentEnd)\n    | where isnotnull(EffectiveStart) and EffectiveStart < incidentEnd and EffectiveEnd >= incidentStart\n    | extend Minutes = iff(isnotnull(StartTime) and isnotnull(EndTime), round((EndTime-StartTime)/1m, 2), real(null)),\n             State = case(Failures > 0, 'Failure signal observed', FinishSignals > 0, 'Finished', StartSignals > 0, 'No finish observed', 'Incomplete telemetry')\n);\nspans\n| where isnotnull(Minutes)\n| extend StartEastern = datetime_utc_to_local(StartTime, 'America/New_York'),\n         EndEastern = datetime_utc_to_local(EndTime, 'America/New_York')\n| project BatchJobId, Caption, BatchTaskId, ClassName, StartEastern, EndEastern, Minutes, State, ActivityId\n| top 40 by Minutes desc",
         "size": 0,
         "title": "Longest completed task executions",
         "noDataMessage": "No matching telemetry in this time range. Check that the events are enabled and the Application Insights resource is selected.",
@@ -280,7 +282,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "// F&O built-in batch task telemetry. Application Insights Logs (customEvents).\nlet incidentStart = {TimeRange:start};\nlet incidentEnd = {TimeRange:end};\nlet backDays = min_of(7, max_of(1, toint('{TaskLookbackDays}')));\nlet filterId = trim(' ', '{JobIdFilter}');\nlet raw = materialize(\n    customEvents\n    | where timestamp between ((incidentStart - backDays * 1d) .. min_of(now(), incidentEnd + backDays * 1d))\n    | where name in ('BatchTaskStart','BatchTaskFinished','BatchTaskFailure')\n    | extend d = customDimensions\n    | extend ActivityId = tostring(d['activityId']),\n             BatchJobId = tostring(d['BatchJobId']),\n             BatchTaskId = iif(isnotempty(tostring(d['BatchJobTaskId'])), tostring(d['BatchJobTaskId']), tostring(d['BatchTaskId'])),\n             ClassName = tostring(d['ClassName']),\n             Caption = tostring(d['BatchJobCaption']),\n             RoleInstance = tostring(cloud_RoleInstance)\n    | where isempty(filterId) or BatchJobId == filterId\n    | where isnotempty(ActivityId) // avoid false joins across recurring executions\n);\nlet spans = materialize(\n    raw\n    | summarize StartTime = minif(timestamp, name == 'BatchTaskStart'),\n                EndTime = maxif(timestamp, name == 'BatchTaskFinished'),\n                FailureTime = maxif(timestamp, name == 'BatchTaskFailure'),\n                StartSignals = countif(name == 'BatchTaskStart'),\n                FinishSignals = countif(name == 'BatchTaskFinished'),\n                Failures = countif(name == 'BatchTaskFailure'),\n                BatchJobId = take_any(BatchJobId),\n                BatchTaskId = take_any(BatchTaskId),\n                ClassName = take_any(ClassName),\n                Caption = take_any(Caption),\n                RoleInstance = take_any(RoleInstance)\n        by ActivityId\n    | extend EffectiveStart = coalesce(StartTime, FailureTime, EndTime),\n             EffectiveEnd = coalesce(EndTime, FailureTime, incidentEnd)\n    | where isnotnull(EffectiveStart) and EffectiveStart < incidentEnd and EffectiveEnd >= incidentStart\n    | extend Minutes = iff(isnotnull(StartTime) and isnotnull(EndTime), round((EndTime-StartTime)/1m, 2), real(null)),\n             State = case(Failures > 0, 'Failure signal observed', FinishSignals > 0, 'Finished', StartSignals > 0, 'No finish observed', 'Incomplete telemetry')\n);\nlet threshold=toint('{LongRunningMinutes}');\nspans\n| where StartSignals>0 and FinishSignals==0 and isnotnull(StartTime)\n| extend ObservedMinutes=round((min_of(now(),incidentEnd)-StartTime)/1m,1)\n| where ObservedMinutes >= threshold\n| extend StartEastern=datetime_utc_to_local(StartTime,'America/New_York')\n| project BatchJobId, BatchTaskId, ClassName, Caption, StartEastern, ObservedMinutes, Failures, ActivityId, RoleInstance\n| order by ObservedMinutes desc",
+        "query": "// F&O built-in batch task telemetry. Application Insights Logs (customEvents).\nlet incidentStart = {TimeRange:start};\nlet incidentEnd = {TimeRange:end};\nlet backDays = min_of(7, max_of(1, toint('{TaskLookbackDays}')));\nlet filterId = trim(' ', '{JobIdFilter}');\nlet raw = materialize(\n    customEvents\n    | where timestamp between ((incidentStart - backDays * 1d) .. min_of(now(), incidentEnd + backDays * 1d))\n    | where name in ('BatchTaskStart','BatchTaskFinished','BatchTaskFailure')\n    | extend d = customDimensions\n    | extend ActivityId = tostring(d['activityId']),\n             BatchJobId = tostring(d['BatchJobId']),\n             BatchTaskId = iif(isnotempty(tostring(d['BatchJobTaskId'])), tostring(d['BatchJobTaskId']), tostring(d['BatchTaskId'])),\n             ClassName = tostring(d['ClassName']),\n             Caption = tostring(d['BatchJobCaption']),\n             RoleInstance = tostring(cloud_RoleInstance)\n    | where isempty(filterId) or BatchJobId == filterId\n    | where isempty('{ActivityIdFilter:escape}') or ActivityId == '{ActivityIdFilter:escape}'\n    | where isnotempty(ActivityId) // avoid false joins across recurring executions\n);\nlet spans = materialize(\n    raw\n    | summarize StartTime = minif(timestamp, name == 'BatchTaskStart'),\n                EndTime = maxif(timestamp, name == 'BatchTaskFinished'),\n                FailureTime = maxif(timestamp, name == 'BatchTaskFailure'),\n                StartSignals = countif(name == 'BatchTaskStart'),\n                FinishSignals = countif(name == 'BatchTaskFinished'),\n                Failures = countif(name == 'BatchTaskFailure'),\n                BatchJobId = take_any(BatchJobId),\n                BatchTaskId = take_any(BatchTaskId),\n                ClassName = take_any(ClassName),\n                Caption = take_any(Caption),\n                RoleInstance = take_any(RoleInstance)\n        by ActivityId\n    | extend EffectiveStart = coalesce(StartTime, FailureTime, EndTime),\n             EffectiveEnd = coalesce(EndTime, FailureTime, incidentEnd)\n    | where isnotnull(EffectiveStart) and EffectiveStart < incidentEnd and EffectiveEnd >= incidentStart\n    | extend Minutes = iff(isnotnull(StartTime) and isnotnull(EndTime), round((EndTime-StartTime)/1m, 2), real(null)),\n             State = case(Failures > 0, 'Failure signal observed', FinishSignals > 0, 'Finished', StartSignals > 0, 'No finish observed', 'Incomplete telemetry')\n);\nlet threshold=toint('{LongRunningMinutes}');\nspans\n| where StartSignals>0 and FinishSignals==0 and isnotnull(StartTime)\n| extend ObservedMinutes=round((min_of(now(),incidentEnd)-StartTime)/1m,1)\n| where ObservedMinutes >= threshold\n| extend StartEastern=datetime_utc_to_local(StartTime,'America/New_York')\n| project BatchJobId, BatchTaskId, ClassName, Caption, StartEastern, ObservedMinutes, Failures, ActivityId, RoleInstance\n| order by ObservedMinutes desc",
         "size": 0,
         "title": "Task starts with no finish observed (threshold)",
         "noDataMessage": "No matching telemetry in this time range. Check that the events are enabled and the Application Insights resource is selected.",
@@ -310,7 +312,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let incidentStart={TimeRange:start};\nlet incidentEnd={TimeRange:end};\nlet filterId=trim(' ','{JobIdFilter}');\ncustomEvents\n| where timestamp between ((incidentStart-2d)..incidentEnd)\n| where name contains 'BatchJobOccurrence' // discover event names without assuming exact strings\n| extend d=customDimensions\n| extend BatchJobId=tostring(d['BatchJobId'])\n| where isempty(filterId) or BatchJobId==filterId\n| extend EventEastern=datetime_utc_to_local(timestamp,'America/New_York')\n| project EventEastern, EventName=name, BatchJobId, BatchJobCaption=tostring(d['BatchJobCaption']), ActivityId=tostring(d['activityId']), OtherDimensions=d\n| order by EventEastern desc\n| take 250",
+        "query": "let incidentStart={TimeRange:start};\nlet incidentEnd={TimeRange:end};\nlet filterId=trim(' ','{JobIdFilter}');\ncustomEvents\n| where timestamp between ((incidentStart-2d)..incidentEnd)\n| where name contains 'BatchJobOccurrence' // discover event names without assuming exact strings\n| extend d=customDimensions\n| extend BatchJobId=tostring(d['BatchJobId'])\n| where isempty(filterId) or BatchJobId==filterId\n| where isempty('{ActivityIdFilter:escape}') or tostring(d['activityId']) == '{ActivityIdFilter:escape}'\n| extend EventEastern=datetime_utc_to_local(timestamp,'America/New_York')\n| project EventEastern, EventName=name, BatchJobId, BatchJobCaption=tostring(d['BatchJobCaption']), ActivityId=tostring(d['activityId']), OtherDimensions=d\n| order by EventEastern desc\n| take 250",
         "size": 0,
         "title": "Batch job occurrence events (raw, last 250)",
         "noDataMessage": "No matching telemetry in this time range. Check that the events are enabled and the Application Insights resource is selected.",
@@ -333,7 +335,7 @@
       "type": 3,
       "content": {
         "version": "KqlItem/1.0",
-        "query": "customEvents\n| where timestamp > ago(7d)\n| where name contains 'Batch'\n| summarize Events=count(), FirstSeenUtc=min(timestamp), LastSeenUtc=max(timestamp), SampleProperties=take_any(customDimensions) by EventName=name\n| order by Events desc",
+        "query": "customEvents\n| where timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where name contains 'Batch'\n| summarize Events=count(), FirstSeenUtc=min(timestamp), LastSeenUtc=max(timestamp), SampleProperties=take_any(customDimensions) by EventName=name\n| order by Events desc",
         "size": 0,
         "title": "Telemetry event schema / sample properties",
         "noDataMessage": "No matching telemetry in this time range. Check that the events are enabled and the Application Insights resource is selected.",
@@ -344,11 +346,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "table",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       },
       "name": "query - Telemetry event schema / sample properties"
     },
@@ -367,11 +370,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "table",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       },
       "name": "query - Task events without activityId (cannot safely correlate)"
     },
@@ -405,7 +409,7 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "table",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
@@ -413,7 +417,8 @@
         "gridSettings": {
           "filter": true,
           "rowLimit": 10000
-        }
+        },
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -432,11 +437,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "piechart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -444,9 +450,9 @@
       "name": "FastTrack - Batch Overview · Throttled batch tasks · 3",
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let _scale = '10m';\ncustomEvents\n| where     timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where     name in (\"BatchThrottled\", \"BatchTaskStart\")\n| extend    customDimensionsParsed = parse_json(customDimensions)\n| extend    batchJobId  = customDimensionsParsed.BatchJobId\n| where     isempty('{JobIdFilter}') or tostring(batchJobId) == '{JobIdFilter}'\n| where     isempty('{EnvironmentIdFilter}') or tostring(customDimensionsParsed.EnvironmentId) == '{EnvironmentIdFilter}'\n| summarize ThrottledTasks = countif(name == \"BatchThrottled\"), RunningTasks = countif(name  == \"BatchTaskStart\") by TimeSum=bin(timestamp, totimespan(_scale))\n| project TimeSum, RunningTasks, ThrottledTasks\n| order by TimeSum asc",
+        "query": "let _scale = '10m';\ncustomEvents\n| where     timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where     name in (\"BatchThrottled\", \"BatchTaskStart\")\n| extend    customDimensionsParsed = parse_json(customDimensions)\n| extend    batchJobId  = customDimensionsParsed.BatchJobId\n\n| where     isempty('{EnvironmentIdFilter}') or tostring(customDimensionsParsed.EnvironmentId) == '{EnvironmentIdFilter}'\n| summarize ThrottlingEvents = countif(name == \"BatchThrottled\"), TaskStarts = countif(name == \"BatchTaskStart\") by TimeSum=bin(timestamp, totimespan(_scale))\n| project TimeSum, TaskStarts, ThrottlingEvents\n| order by TimeSum asc",
         "size": 0,
-        "title": "Batch Overview · Throttled batch tasks · 3",
+        "title": "Global batch throttling events and task starts (10-minute bins)",
         "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
         "noDataMessageStyle": 3,
         "showAnalytics": true,
@@ -455,11 +461,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "timechart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -478,11 +485,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "piechart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -501,11 +509,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "timechart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -513,7 +522,7 @@
       "name": "FastTrack - Batch Overview · Batch execution history · 6",
       "content": {
         "version": "KqlItem/1.0",
-        "query": "customEvents\n| where     timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where     name in (\"BatchTaskStart\",\"BatchTaskFinished\",\"BatchTaskFailure\")\n| extend    customDimensionsParsed = parse_json(customDimensions)\n| extend    InfoMessageParsed   = parse_json(tostring(customDimensionsParsed.InfoMessage))\n| where     isempty('{EnvironmentIdFilter}') or tostring(customDimensionsParsed.EnvironmentId) == '{EnvironmentIdFilter}'\n| extend    ActivityId          = tostring(customDimensionsParsed.activityId)\n| extend    ClassName           = tostring(customDimensionsParsed.ClassName)\n| extend    BatchJobId          = tostring(customDimensionsParsed.BatchJobId)\n| extend    BatchJobTaskId1      = tostring(customDimensionsParsed.BatchJobTaskId)\n| extend    BatchJobTaskId2      = tostring(customDimensionsParsed.BatchTaskId)\n| extend    BatchJobTaskId      = iif(isnotempty(BatchJobTaskId1), BatchJobTaskId1, BatchJobTaskId2) // Temporary trick until the batch team synchronizes the field names across events\n//| where isempty(_batchAOS) or cloud_RoleInstance in(_batchAOS)\n| extend    StartTime           = iff(name == \"BatchTaskStart\"    , timestamp, datetime(null))\n| extend    EndTime             = iff(name == \"BatchTaskFinished\"   , timestamp, datetime(null))\n| extend    ErrorTime           = iff(name == \"BatchTaskFailure\"   , timestamp, datetime(null))\n| extend    RetryCount          = iff(name == \"BatchTaskStart\"    , InfoMessageParsed.RetryCount, \"\")\n| project   StartTime, EndTime,ErrorTime,RetryCount, ActivityId, ClassName, BatchJobId, RoleInstance = cloud_RoleInstance, BatchJobTaskId\n| where     isempty('{JobIdFilter}') or tostring(BatchJobId) == '{JobIdFilter}'\n| summarize   StartTime         = min(StartTime),\n              CompletionTime    = max(EndTime),\n              ErrorTime         = max(ErrorTime),\n              RetryCount        = take_any(RetryCount),\n              ClassName         = any(ClassName), \n              BatchJobId        = any(BatchJobId),\n              BatchJobTaskId    = any(BatchJobTaskId),\n              RoleInstance      = any(RoleInstance)\nby ActivityId\n| where isnotempty(StartTime)\n| extend BatchAOS = strcat(split(RoleInstance, \"-\")[0])\n| extend ElapsedTime = iif(isnotempty(CompletionTime), CompletionTime, now()) - StartTime\n| project ActivityId, BatchAOS, BatchJobId, BatchJobTaskId, ClassName, StartTime, CompletionTime, ElapsedTime, RetryCount",
+        "query": "customEvents\n| where     timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where     name in (\"BatchTaskStart\",\"BatchTaskFinished\",\"BatchTaskFailure\")\n| extend    customDimensionsParsed = parse_json(customDimensions)\n| extend    InfoMessageParsed   = parse_json(tostring(customDimensionsParsed.InfoMessage))\n| where     isempty('{EnvironmentIdFilter}') or tostring(customDimensionsParsed.EnvironmentId) == '{EnvironmentIdFilter}'\n| extend    ActivityId          = tostring(customDimensionsParsed.activityId)\n| extend    ClassName           = tostring(customDimensionsParsed.ClassName)\n| extend    BatchJobId          = tostring(customDimensionsParsed.BatchJobId)\n| extend    BatchJobTaskId1      = tostring(customDimensionsParsed.BatchJobTaskId)\n| extend    BatchJobTaskId2      = tostring(customDimensionsParsed.BatchTaskId)\n| extend    BatchJobTaskId      = iif(isnotempty(BatchJobTaskId1), BatchJobTaskId1, BatchJobTaskId2) // Temporary trick until the batch team synchronizes the field names across events\n//| where isempty(_batchAOS) or cloud_RoleInstance in(_batchAOS)\n| extend    StartTime           = iff(name == \"BatchTaskStart\"    , timestamp, datetime(null))\n| extend    EndTime             = iff(name == \"BatchTaskFinished\"   , timestamp, datetime(null))\n| extend    ErrorTime           = iff(name == \"BatchTaskFailure\"   , timestamp, datetime(null))\n| extend    RetryCount          = iff(name == \"BatchTaskStart\"    , InfoMessageParsed.RetryCount, \"\")\n| where isempty('{ActivityIdFilter:escape}') or ActivityId == '{ActivityIdFilter:escape}'\n| project StartTime, EndTime,ErrorTime,RetryCount, ActivityId, ClassName, BatchJobId, RoleInstance = cloud_RoleInstance, BatchJobTaskId\n| where     isempty('{JobIdFilter}') or tostring(BatchJobId) == '{JobIdFilter}'\n| summarize   StartTime         = min(StartTime),\n              CompletionTime    = max(EndTime),\n              ErrorTime         = max(ErrorTime),\n              RetryCount        = take_any(RetryCount),\n              ClassName         = any(ClassName), \n              BatchJobId        = any(BatchJobId),\n              BatchJobTaskId    = any(BatchJobTaskId),\n              RoleInstance      = any(RoleInstance)\nby ActivityId\n| where isnotempty(StartTime)\n| extend BatchAOS = strcat(split(RoleInstance, \"-\")[0])\n| extend ElapsedTime = iif(isnotempty(CompletionTime), CompletionTime, now()) - StartTime\n| project ActivityId, BatchAOS, BatchJobId, BatchJobTaskId, ClassName, StartTime, CompletionTime, ElapsedTime, RetryCount",
         "size": 0,
         "title": "Batch Overview · Batch execution history · 6",
         "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
@@ -524,7 +533,7 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "table",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
@@ -532,7 +541,8 @@
         "gridSettings": {
           "filter": true,
           "rowLimit": 10000
-        }
+        },
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -547,9 +557,9 @@
       "name": "FastTrack - Batch Throttling · Throttled batch tasks · 7",
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let _scale = '10m';\ncustomEvents\n| where     timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where     name in (\"BatchThrottled\", \"BatchTaskStart\")\n| extend    customDimensionsParsed = parse_json(customDimensions)\n| extend    batchJobId  = customDimensionsParsed.BatchJobId\n| where     isempty('{EnvironmentIdFilter}') or tostring(customDimensionsParsed.EnvironmentId) == '{EnvironmentIdFilter}'\n| where     isempty('{JobIdFilter}') or tostring(batchJobId) == '{JobIdFilter}'\n| summarize ThrottledTasks = countif(name == \"BatchThrottled\"), RunningTasks = countif(name  == \"BatchTaskStart\") by TimeSum=bin(timestamp, totimespan(_scale))\n| project TimeSum, RunningTasks, ThrottledTasks\n| order by TimeSum asc",
+        "query": "let _scale = '10m';\ncustomEvents\n| where     timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where     name in (\"BatchThrottled\", \"BatchTaskStart\")\n| extend    customDimensionsParsed = parse_json(customDimensions)\n| extend    batchJobId  = customDimensionsParsed.BatchJobId\n| where     isempty('{EnvironmentIdFilter}') or tostring(customDimensionsParsed.EnvironmentId) == '{EnvironmentIdFilter}'\n\n| summarize ThrottlingEvents = countif(name == \"BatchThrottled\"), TaskStarts = countif(name == \"BatchTaskStart\") by TimeSum=bin(timestamp, totimespan(_scale))\n| project TimeSum, TaskStarts, ThrottlingEvents\n| order by TimeSum asc",
         "size": 0,
-        "title": "Batch Throttling · Throttled batch tasks · 7",
+        "title": "Global batch throttling events and task starts (10-minute bins)",
         "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
         "noDataMessageStyle": 3,
         "showAnalytics": true,
@@ -558,11 +568,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "timechart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -581,7 +592,7 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "table",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
@@ -589,7 +600,8 @@
         "gridSettings": {
           "filter": true,
           "rowLimit": 10000
-        }
+        },
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -604,7 +616,7 @@
       "name": "FastTrack - Batch Errors · Batch exceptions · 9",
       "content": {
         "version": "KqlItem/1.0",
-        "query": "// BatchTaskFailure is providing Exceptions in the batch execution. \n// These events are providing exception information that is often not covered by infolog errors, but exceptions that are thrown during batch processing and batch scheduling.\ncustomEvents\n| where     timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where     name in (\"BatchTaskFailure\")\n| extend    customDimensionsParsed = parse_json(customDimensions)\n| extend    BatchJobCaption     = tostring(customDimensionsParsed.BatchJobCaption)\n| extend    ActivityId          = tostring(customDimensionsParsed.activityId)\n| extend    ClassName           = iif((tostring(customDimensionsParsed.ClassName) == \"<empty>\"), \"\", tostring(customDimensionsParsed.ClassName))\n| extend    BatchJobId          = tostring(customDimensionsParsed.BatchJobId)\n| extend    BatchTaskId         = tostring(customDimensionsParsed.BatchTaskId)\n| extend    EventMessage        = tostring(customDimensionsParsed.EventMessage)\n| extend    ExceptionType       = tostring(customDimensionsParsed.ExceptionType)\n| extend    ExceptionMessage    = tostring(customDimensionsParsed.ExceptionMessage)\n| extend    CallStack           = tostring(customDimensionsParsed.CallStack)\n| where     isempty('{JobIdFilter}') or tostring(BatchJobId) == '{JobIdFilter}'\n| where     isempty('{EnvironmentIdFilter}') or tostring(customDimensionsParsed.EnvironmentId) == '{EnvironmentIdFilter}'\n| project   TimeStamp = timestamp, RoleInstance = cloud_RoleInstance, ActivityId, BatchJobCaption, ClassName, BatchJobId, BatchTaskId, EventMessage, ExceptionType, ExceptionMessage, CallStack",
+        "query": "// BatchTaskFailure is providing Exceptions in the batch execution. \n// These events are providing exception information that is often not covered by infolog errors, but exceptions that are thrown during batch processing and batch scheduling.\ncustomEvents\n| where     timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where     name in (\"BatchTaskFailure\")\n| extend    customDimensionsParsed = parse_json(customDimensions)\n| extend    BatchJobCaption     = tostring(customDimensionsParsed.BatchJobCaption)\n| extend    ActivityId          = tostring(customDimensionsParsed.activityId)\n| extend    ClassName           = iif((tostring(customDimensionsParsed.ClassName) == \"<empty>\"), \"\", tostring(customDimensionsParsed.ClassName))\n| extend    BatchJobId          = tostring(customDimensionsParsed.BatchJobId)\n| extend    BatchTaskId         = tostring(customDimensionsParsed.BatchTaskId)\n| extend    EventMessage        = tostring(customDimensionsParsed.EventMessage)\n| extend    ExceptionType       = tostring(customDimensionsParsed.ExceptionType)\n| extend    ExceptionMessage    = tostring(customDimensionsParsed.ExceptionMessage)\n| extend    CallStack           = tostring(customDimensionsParsed.CallStack)\n| where     isempty('{JobIdFilter}') or tostring(BatchJobId) == '{JobIdFilter}'\n| where     isempty('{EnvironmentIdFilter}') or tostring(customDimensionsParsed.EnvironmentId) == '{EnvironmentIdFilter}'\n| where isempty('{ActivityIdFilter:escape}') or ActivityId == '{ActivityIdFilter:escape}'\n| project TimeStamp = timestamp, RoleInstance = cloud_RoleInstance, ActivityId, BatchJobCaption, ClassName, BatchJobId, BatchTaskId, EventMessage, ExceptionType, ExceptionMessage, CallStack",
         "size": 0,
         "title": "Batch Errors · Batch exceptions · 9",
         "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
@@ -615,7 +627,7 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "table",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
@@ -623,7 +635,8 @@
         "gridSettings": {
           "filter": true,
           "rowLimit": 10000
-        }
+        },
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -631,7 +644,7 @@
       "name": "FastTrack - Batch Errors · Batch Infolog Errors · 10",
       "content": {
         "version": "KqlItem/1.0",
-        "query": "exceptions\n| where     timestamp between ({TimeRange:start} .. {TimeRange:end})\n| extend    cvustomDimensionsParsed = parse_json(customDimensions)\n| extend    ExecutionMode   = tostring(cvustomDimensionsParsed.ExecutionMode)\n| extend    BatchJobId      = tostring(cvustomDimensionsParsed.BatchJobId)\n| extend    BatchJobCaption = tostring(cvustomDimensionsParsed.BatchJobCaption)\n| extend    ActivityId      = tostring(cvustomDimensionsParsed.activityId)\n| extend    MethodName      = tostring(cvustomDimensionsParsed.MethodName)\n| extend    ClassName       = tostring(cvustomDimensionsParsed.ClassName)\n| extend    CallStack       = tostring(cvustomDimensionsParsed.CallStack)\n| where     ExecutionMode   == \"Batch\"\n| where     isempty('{JobIdFilter}') or tostring(BatchJobId) == '{JobIdFilter}'\n| where     isempty('{EnvironmentIdFilter}') or tostring(cvustomDimensionsParsed.EnvironmentId) == '{EnvironmentIdFilter}'\n| project   TimeStamp = timestamp, ActivityId, BatchJobId, BatchJobCaption, OuterMessage = outerMessage, CallStack",
+        "query": "exceptions\n| where     timestamp between ({TimeRange:start} .. {TimeRange:end})\n| extend    cvustomDimensionsParsed = parse_json(customDimensions)\n| extend    ExecutionMode   = tostring(cvustomDimensionsParsed.ExecutionMode)\n| extend    BatchJobId      = tostring(cvustomDimensionsParsed.BatchJobId)\n| extend    BatchJobCaption = tostring(cvustomDimensionsParsed.BatchJobCaption)\n| extend    ActivityId      = tostring(cvustomDimensionsParsed.activityId)\n| extend    MethodName      = tostring(cvustomDimensionsParsed.MethodName)\n| extend    ClassName       = tostring(cvustomDimensionsParsed.ClassName)\n| extend    CallStack       = tostring(cvustomDimensionsParsed.CallStack)\n| where     ExecutionMode   == \"Batch\"\n| where     isempty('{JobIdFilter}') or tostring(BatchJobId) == '{JobIdFilter}'\n| where     isempty('{EnvironmentIdFilter}') or tostring(cvustomDimensionsParsed.EnvironmentId) == '{EnvironmentIdFilter}'\n| where isempty('{ActivityIdFilter:escape}') or ActivityId == '{ActivityIdFilter:escape}'\n| project TimeStamp = timestamp, ActivityId, BatchJobId, BatchJobCaption, OuterMessage = outerMessage, CallStack",
         "size": 0,
         "title": "Batch Errors · Batch Infolog Errors · 10",
         "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
@@ -642,7 +655,7 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "table",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
@@ -650,7 +663,8 @@
         "gridSettings": {
           "filter": true,
           "rowLimit": 10000
-        }
+        },
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -669,11 +683,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "timechart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -692,11 +707,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "timechart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -722,11 +738,19 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "timechart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - V2 Batch guidance",
+      "content": {
+        "json": "### v2 filter behavior\n\n- **TimeRange:** all standard monitoring charts are scoped directly to the selected interval. The task-span hierarchy, longest-task and missing-finish panels deliberately look backward to include work that began before the incident.\n- **Batch Job ID:** narrows job-specific panels. Global throttling charts are unfiltered by job because `BatchThrottled` can report a Job ID of `0`. Task-start signals are counts, **not actual concurrent running threads**.\n- **Activity ID:** narrows task execution and error detail views, not the global capacity gauges.\n- **Missing finish:** confirms only that a completion *event* was not observed. Check F&O batch history before treating it as a stuck task.\n\nSource: `source/Batch_ADX_Original.json`. Query syntax and workbook schema have been checked statically; live Application Insights data is not accessible to this conversion."
       }
     }
   ],
