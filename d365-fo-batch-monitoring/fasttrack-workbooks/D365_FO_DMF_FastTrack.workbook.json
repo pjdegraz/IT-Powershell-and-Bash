@@ -5,7 +5,7 @@
       "type": 1,
       "name": "text - DMF introduction",
       "content": {
-        "json": "# Dynamics 365 F&O — DMF / Data Management Monitoring\n\nConverted from Microsoft FastTrack DMF ADX dashboard for **Azure Monitor Workbooks**. Directly queries your selected **Application Insights** resource; no standalone ADX cluster is required.\n\nSelect a **Custom time interval** (for example 1:00–2:00 PM) to investigate data-project imports/exports, entity records, durations, error messages, and incomplete telemetry. Blank filters include all values. Results reflect **observed telemetry**, not authoritative status in F&O. A missing End event may mean processing is ongoing, delayed, or that telemetry was dropped.\n\n**First-run validation:** Verify `DMF*` events exist in Application Insights, the customDimensions keys match your F&O version, and dashboard values match Data Management execution history. Large time windows cause higher query load."
+        "json": "# Dynamics 365 F&O — DMF / Data Management Monitoring\n\nConverted from Microsoft FastTrack DMF ADX dashboard for **Azure Monitor Workbooks**. Directly queries your selected **Application Insights** resource; no standalone ADX cluster is required.\n\nSelect a **Custom time interval** (for example 1:00–2:00 PM) to investigate data-project imports/exports, entity records, durations, error messages, and incomplete telemetry. Blank filters include all values. Results reflect **observed telemetry**, not authoritative status in F&O. A missing End event may mean processing is ongoing, delayed, or that telemetry was dropped.\n\n**First-run validation:** Verify `DMF*` events exist in Application Insights, the customDimensions keys match your F&O version, and dashboard values match Data Management execution history. Large time windows cause higher query load.\n\n**v2:** Time scope is connected to all standard panels. The 'No completion event by selected end' panel also checks starts from up to 1–7 preceding days, so it can show work that began before a 1:00–2:00 PM incident. It evaluates the state **as observed at the selected end time**, not the current state. Missing end telemetry is not proof that the execution is actually running."
       }
     },
     {
@@ -15,7 +15,7 @@
         "version": "KqlParameterItem/1.0",
         "parameters": [
           {
-            "id": "resource-dmf-appinsights",
+            "id": "f2a00000-d4f0-4e21-a321-000000000001",
             "version": "KqlParameterItem/1.0",
             "name": "AppInsightsResource",
             "label": "Application Insights resource",
@@ -33,7 +33,7 @@
             "defaultValue": "value::1"
           },
           {
-            "id": "dmf-time-range",
+            "id": "f2a00000-d4f0-4e21-a321-000000000002",
             "version": "KqlParameterItem/1.0",
             "name": "TimeRange",
             "label": "Incident date & time (Custom supports 1:00–2:00 PM)",
@@ -64,7 +64,7 @@
             }
           },
           {
-            "id": "param-EnvironmentIdFilter",
+            "id": "f2a00000-d4f0-4e21-a321-000000000003",
             "version": "KqlParameterItem/1.0",
             "name": "EnvironmentIdFilter",
             "label": "Optional F&O environment ID",
@@ -72,7 +72,7 @@
             "value": ""
           },
           {
-            "id": "param-EntityNameFilter",
+            "id": "f2a00000-d4f0-4e21-a321-000000000004",
             "version": "KqlParameterItem/1.0",
             "name": "EntityNameFilter",
             "label": "Optional entity name",
@@ -80,7 +80,7 @@
             "value": ""
           },
           {
-            "id": "param-DataProjectFilter",
+            "id": "f2a00000-d4f0-4e21-a321-000000000005",
             "version": "KqlParameterItem/1.0",
             "name": "DataProjectFilter",
             "label": "Optional data project name",
@@ -88,7 +88,7 @@
             "value": ""
           },
           {
-            "id": "param-ExecutionIdFilter",
+            "id": "f2a00000-d4f0-4e21-a321-000000000006",
             "version": "KqlParameterItem/1.0",
             "name": "ExecutionIdFilter",
             "label": "Optional DMF execution ID",
@@ -96,7 +96,7 @@
             "value": ""
           },
           {
-            "id": "param-ActivityIdFilter",
+            "id": "f2a00000-d4f0-4e21-a321-000000000007",
             "version": "KqlParameterItem/1.0",
             "name": "ActivityIdFilter",
             "label": "Optional activity ID",
@@ -104,7 +104,7 @@
             "value": ""
           },
           {
-            "id": "dmf-bin",
+            "id": "f2a00000-d4f0-4e21-a321-000000000008",
             "version": "KqlParameterItem/1.0",
             "name": "TimeSpanFilter",
             "label": "Chart granularity",
@@ -112,25 +112,18 @@
             "value": "10m",
             "typeSettings": {
               "additionalResourceOptions": [],
-              "allowedValues": [
-                {
-                  "value": "1m",
-                  "label": "1 minute"
-                },
-                {
-                  "value": "10m",
-                  "label": "10 minutes"
-                },
-                {
-                  "value": "30m",
-                  "label": "30 minutes"
-                },
-                {
-                  "value": "1h",
-                  "label": "1 hour"
-                }
-              ]
-            }
+              "showDefault": false
+            },
+            "isRequired": true,
+            "jsonData": "[\n  {\n    \"value\": \"1m\",\n    \"label\": \"1 minute\"\n  },\n  {\n    \"value\": \"10m\",\n    \"label\": \"10 minutes\",\n    \"selected\": true\n  },\n  {\n    \"value\": \"30m\",\n    \"label\": \"30 minutes\"\n  },\n  {\n    \"value\": \"1h\",\n    \"label\": \"1 hour\"\n  }\n]"
+          },
+          {
+            "id": "f2a00000-d4f0-4e21-a321-000000000009",
+            "version": "KqlParameterItem/1.0",
+            "name": "DMFLookbackDays",
+            "label": "Prior days to inspect for DMF starts (1–7)",
+            "type": 1,
+            "value": "2"
           }
         ],
         "style": "above",
@@ -161,7 +154,7 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "table",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
@@ -169,7 +162,8 @@
         "gridSettings": {
           "filter": true,
           "rowLimit": 10000
-        }
+        },
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -188,7 +182,7 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "table",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
@@ -196,7 +190,8 @@
         "gridSettings": {
           "filter": true,
           "rowLimit": 10000
-        }
+        },
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -215,11 +210,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "barchart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -238,11 +234,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "barchart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -261,11 +258,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "barchart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -284,7 +282,7 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "table",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
@@ -292,7 +290,8 @@
         "gridSettings": {
           "filter": true,
           "rowLimit": 10000
-        }
+        },
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -311,7 +310,7 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "table",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
@@ -319,7 +318,8 @@
         "gridSettings": {
           "filter": true,
           "rowLimit": 10000
-        }
+        },
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -338,11 +338,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "barchart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -361,11 +362,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "timechart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -391,11 +393,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "barchart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -414,7 +417,7 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "table",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
@@ -422,7 +425,8 @@
         "gridSettings": {
           "filter": true,
           "rowLimit": 10000
-        }
+        },
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -441,11 +445,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "timechart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -471,11 +476,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "barchart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -494,11 +500,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "barchart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -517,11 +524,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "barchart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -540,11 +548,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "barchart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -556,12 +565,12 @@
     },
     {
       "type": 3,
-      "name": "FastTrack - Overview · Unfinished runs · 18",
+      "name": "FastTrack - No DMF completion observed by selected end",
       "content": {
         "version": "KqlItem/1.0",
-        "query": "let AllDMFEventsToNow = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. now() )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty('{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nAllDMFEventsToNow\r\n| where name == \"DMFExportJobStart\" or name == \"DMFImportJobStart\"\r\n| distinct DataProjectName, ExecutionId, direction\r\n| join kind=leftanti (AllDMFEventsToNow\r\n            | where name == \"DMFExportJobEnd\" or name == \"DMFImportJobEnd\"\r\n            | distinct ExecutionId) on $left.ExecutionId == $right.ExecutionId\r\n| limit 1000",
+        "query": "// Historical as-of incident-end analysis; an absent finish is not proof of a running job.\nlet incidentStart = {TimeRange:start};\nlet incidentEnd = {TimeRange:end};\nlet lookbackDays = min_of(7, max_of(1, toint('{DMFLookbackDays:escape}')));\nlet events = materialize(\n  customEvents\n  | where timestamp between ((incidentStart - lookbackDays * 1d) .. incidentEnd)\n  | where name in ('DMFExportJobStart','DMFExportJobEnd','DMFImportJobStart','DMFImportJobEnd')\n  | extend d = customDimensions\n  | extend ExecutionId = tostring(d.ExecutionId),\n           DataProjectName = replace_regex(tostring(d.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', ''),\n           EntityName = tostring(d.EntityName),\n           EnvironmentId = tostring(d.environmentId),\n           ActivityId = tostring(d.activityId),\n           BatchJobId = tostring(d.BatchJobId)\n  | extend Direction = iff(name startswith 'DMFExport', 'Export', 'Import')\n  | where isnotempty(ExecutionId)\n  | where isempty('{EnvironmentIdFilter:escape}') or EnvironmentId == '{EnvironmentIdFilter:escape}'\n  | where isempty('{EntityNameFilter:escape}') or EntityName == '{EntityNameFilter:escape}'\n  | where isempty('{DataProjectFilter:escape}') or DataProjectName == '{DataProjectFilter:escape}'\n  | where isempty('{ExecutionIdFilter:escape}') or ExecutionId == '{ExecutionIdFilter:escape}'\n  | where isempty('{ActivityIdFilter:escape}') or ActivityId == '{ActivityIdFilter:escape}'\n);\nevents\n| summarize StartedAt=minif(timestamp, name endswith 'JobStart'),\n            LastEndAt=maxif(timestamp, name endswith 'JobEnd'),\n            StartSignals=countif(name endswith 'JobStart'),\n            EndSignals=countif(name endswith 'JobEnd'),\n            BatchJobId=take_any(BatchJobId),\n            EntityName=take_any(EntityName)\n  by EnvironmentId, DataProjectName, ExecutionId, Direction\n| where StartSignals > 0 and EndSignals == 0 and isnotnull(StartedAt) and StartedAt <= incidentEnd\n| extend StartedBeforeWindow = StartedAt < incidentStart,\n         MinutesSinceStartAtWindowEnd = round((incidentEnd - StartedAt) / 1m, 1),\n         ObservedState = 'No completion event observed by selected end'\n| project EnvironmentId, DataProjectName, ExecutionId, Direction, EntityName, BatchJobId,\n          StartedAt, StartedBeforeWindow, MinutesSinceStartAtWindowEnd, ObservedState\n| order by StartedAt desc\n| take 1000",
         "size": 0,
-        "title": "Overview · Unfinished runs · 18",
+        "title": "No DMF completion event by selected incident end (candidate unfinished)",
         "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
         "noDataMessageStyle": 3,
         "showAnalytics": true,
@@ -597,11 +606,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "barchart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -620,11 +630,12 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "barchart",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
-        ]
+        ],
+        "timeContextFromParameter": "TimeRange"
       }
     },
     {
@@ -657,7 +668,7 @@
         "resourceType": "microsoft.insights/components",
         "visualization": "table",
         "timeContext": {
-          "durationMs": 7776000000
+          "durationMs": 0
         },
         "crossComponentResources": [
           "{AppInsightsResource}"
@@ -665,7 +676,15 @@
         "gridSettings": {
           "filter": true,
           "rowLimit": 10000
-        }
+        },
+        "timeContextFromParameter": "TimeRange"
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - V2 DMF guidance",
+      "content": {
+        "json": "### v2 filter behavior\n\n- **TimeRange:** filters the standard DMF charts and tables to the selected interval; choose **Custom** for investigations such as 1:00–2:00 PM.\n- **Chart granularity:** the drop-down now uses workbook-compatible JSON data (`1m`, `10m`, `30m`, `1h`).\n- **No completion event by selected end:** searches for DMF start signals before the chosen end, including a configurable lookback period; an end event after that timestamp does **not** change the historical as-of observation. If start/end events were sampled out or are absent, the result is only a candidate, not a verified stuck execution.\n- **DMF project/entity/execution/activity filters:** supported in relevant panels using Microsoft FastTrack custom dimensions. Adjust to your organization's telemetry field names if required.\n\nSource: `source/DMF_ADX_Original.json`. Static JSON and query-pattern validation is not a live Azure import or runtime test."
       }
     }
   ],
