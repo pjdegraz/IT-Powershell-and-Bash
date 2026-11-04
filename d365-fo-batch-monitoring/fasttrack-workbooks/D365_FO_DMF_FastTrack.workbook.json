@@ -1,0 +1,674 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "name": "text - DMF introduction",
+      "content": {
+        "json": "# Dynamics 365 F&O — DMF / Data Management Monitoring\n\nConverted from Microsoft FastTrack DMF ADX dashboard for **Azure Monitor Workbooks**. Directly queries your selected **Application Insights** resource; no standalone ADX cluster is required.\n\nSelect a **Custom time interval** (for example 1:00–2:00 PM) to investigate data-project imports/exports, entity records, durations, error messages, and incomplete telemetry. Blank filters include all values. Results reflect **observed telemetry**, not authoritative status in F&O. A missing End event may mean processing is ongoing, delayed, or that telemetry was dropped.\n\n**First-run validation:** Verify `DMF*` events exist in Application Insights, the customDimensions keys match your F&O version, and dashboard values match Data Management execution history. Large time windows cause higher query load."
+      }
+    },
+    {
+      "type": 9,
+      "name": "parameters - DMF filters",
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "resource-dmf-appinsights",
+            "version": "KqlParameterItem/1.0",
+            "name": "AppInsightsResource",
+            "label": "Application Insights resource",
+            "type": 5,
+            "isRequired": true,
+            "typeSettings": {
+              "additionalResourceOptions": [
+                "value::1"
+              ],
+              "showDefault": false,
+              "resourceTypeFilter": {
+                "microsoft.insights/components": true
+              }
+            },
+            "defaultValue": "value::1"
+          },
+          {
+            "id": "dmf-time-range",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Incident date & time (Custom supports 1:00–2:00 PM)",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 86400000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 14400000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 604800000
+                },
+                {
+                  "durationMs": 2592000000
+                }
+              ],
+              "allowCustom": true
+            }
+          },
+          {
+            "id": "param-EnvironmentIdFilter",
+            "version": "KqlParameterItem/1.0",
+            "name": "EnvironmentIdFilter",
+            "label": "Optional F&O environment ID",
+            "type": 1,
+            "value": ""
+          },
+          {
+            "id": "param-EntityNameFilter",
+            "version": "KqlParameterItem/1.0",
+            "name": "EntityNameFilter",
+            "label": "Optional entity name",
+            "type": 1,
+            "value": ""
+          },
+          {
+            "id": "param-DataProjectFilter",
+            "version": "KqlParameterItem/1.0",
+            "name": "DataProjectFilter",
+            "label": "Optional data project name",
+            "type": 1,
+            "value": ""
+          },
+          {
+            "id": "param-ExecutionIdFilter",
+            "version": "KqlParameterItem/1.0",
+            "name": "ExecutionIdFilter",
+            "label": "Optional DMF execution ID",
+            "type": 1,
+            "value": ""
+          },
+          {
+            "id": "param-ActivityIdFilter",
+            "version": "KqlParameterItem/1.0",
+            "name": "ActivityIdFilter",
+            "label": "Optional activity ID",
+            "type": 1,
+            "value": ""
+          },
+          {
+            "id": "dmf-bin",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeSpanFilter",
+            "label": "Chart granularity",
+            "type": 2,
+            "value": "10m",
+            "typeSettings": {
+              "additionalResourceOptions": [],
+              "allowedValues": [
+                {
+                  "value": "1m",
+                  "label": "1 minute"
+                },
+                {
+                  "value": "10m",
+                  "label": "10 minutes"
+                },
+                {
+                  "value": "30m",
+                  "label": "30 minutes"
+                },
+                {
+                  "value": "1h",
+                  "label": "1 hour"
+                }
+              ]
+            }
+          }
+        ],
+        "style": "above",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components"
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - DMF Overview",
+      "content": {
+        "json": "## Overview"
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · All Export activities · 1",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| where direction == \"Export\"\n| order by timestamp desc",
+        "size": 0,
+        "title": "Overview · All Export activities · 1",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 10000
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · All import activities · 2",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| where direction == \"Import\"\n| order by timestamp desc",
+        "size": 0,
+        "title": "Overview · All import activities · 2",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 10000
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · Import vs export count (completed) · 3",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\r\n| where name == \"DMFExportJobEnd\" or name == \"DMFImportJobEnd\"\r\n| summarize Count = count_distinct(ExecutionId) by direction",
+        "size": 0,
+        "title": "Overview · Import vs export count (completed) · 3",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "barchart",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · Completed executions per entity · 4",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| where name == \"DMFExportJobEnd\" or name == \"DMFImportJobEnd\"\n| summarize NumberOfExecutions =  count() by EntityName , direction\n| order by NumberOfExecutions desc",
+        "size": 0,
+        "title": "Overview · Completed executions per entity · 4",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "barchart",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · Total records per entity · 5",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| where name == \"DMFExportJobEnd\" or name == \"DMFImportJobEnd\"\n| summarize sum(TotalNumberOfRecords) by EntityName , direction\n| order by sum_TotalNumberOfRecords desc",
+        "size": 0,
+        "title": "Overview · Total records per entity · 5",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "barchart",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · All DMF events (10000) · 6",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| limit 10000",
+        "size": 0,
+        "title": "Overview · All DMF events (10000) · 6",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 10000
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · Executions by duration (top 100) · 7",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| where name in (\"DMFImportJobStart\",\"DMFImportJobEnd\",\"DMFExportJobStart\", \"DMFExportJobEnd\")\n| summarize Duration = max(timestamp)-min(timestamp), Start = min(timestamp), End = max(timestamp),  LegalEntity = take_any(LegalEntity), Records = max(TotalNumberOfRecords),ActivityId = take_any(activityId), Direction = take_any(direction) by EntityName,ExecutionId\n| order by Duration desc \n| limit 100",
+        "size": 0,
+        "title": "Overview · Executions by duration (top 100) · 7",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 10000
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · Total duration (sec) per entity and direction · 8",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| where name in (\"DMFImportJobStart\",\"DMFImportJobEnd\",\"DMFExportJobStart\", \"DMFExportJobEnd\")\n| summarize Duration = max(timestamp)-min(timestamp) by EntityName, ExecutionId, direction\n| extend DurationInSec =  Duration / 1s\n| summarize DurationInSec = toint(  sum(DurationInSec)) by EntityName,  direction\n| order by DurationInSec desc",
+        "size": 0,
+        "title": "Overview · Total duration (sec) per entity and direction · 8",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "barchart",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · Data project execution timeline · 9",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n\n| where isempty('{DataProjectFilter}') or DataProjectName == '{DataProjectFilter}'\n| where name in (\"DMFImportJobStart\",\"DMFImportJobEnd\",\"DMFExportJobStart\", \"DMFExportJobEnd\")\n| summarize StartTime = min(timestamp), EndTime = max(timestamp), Duration = max(timestamp)-min(timestamp), Records = max(TotalNumberOfRecords), Direction = take_any(direction) by ExecutionId, LegalEntity\n | summarize TotalDuration = sum(Duration), AvgDuration = avg(Duration), MinDuration = min(Duration), MaxDuration = max(Duration) by bin(EndTime, totimespan('{TimeSpanFilter}'))",
+        "size": 0,
+        "title": "Overview · Data project execution timeline · 9",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "timechart",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - DMF Errors",
+      "content": {
+        "json": "## Errors"
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Errors · Errors per per project · 10",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| where name == 'DMFError'\n| summarize count() by DataProjectName, direction\n| order by count_ desc\n| limit 20",
+        "size": 0,
+        "title": "Errors · Errors per per project · 10",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "barchart",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Errors · All Errors (limit 1000) · 11",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| where name == 'DMFError'\n| project timestamp, LegalEntity, user_Id, StagingRecId, ExecutionId, activityId, ErrorMessage, DataProjectName, EntityName,  SourceOrTarget, ExecutionMode, cloud_RoleInstance, BatchJobId, environmentId, direction\n| limit 1000",
+        "size": 0,
+        "title": "Errors · All Errors (limit 1000) · 11",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 10000
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Errors · Errors trend timeline · 12",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| where name == 'DMFError'\n| where isempty('{DataProjectFilter}') or DataProjectName == '{DataProjectFilter}'\n| where isempty('{EntityNameFilter}') or EntityName == '{EntityNameFilter}'\n| where isempty('{ExecutionIdFilter}') or ExecutionId == '{ExecutionIdFilter}'\n| summarize NUmberOfErrors = count() by bin(timestamp, totimespan('{TimeSpanFilter}'))//, DataProjectName, LegalEntity",
+        "size": 0,
+        "title": "Errors · Errors trend timeline · 12",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "timechart",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - DMF Overview",
+      "content": {
+        "json": "## Overview"
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · Avg record processing duration by Data project · 13",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| where name in (\"DMFImportJobStart\",\"DMFImportJobEnd\",\"DMFExportJobStart\", \"DMFExportJobEnd\")\n| summarize Duration = max(timestamp)-min(timestamp), Start = min(timestamp), End = max(timestamp),  LegalEntity = take_any(LegalEntity), Records = max(TotalNumberOfRecords),ActivityId = take_any(activityId), Direction = take_any(direction) by DataProjectName, ExecutionId\n| summarize ['AVG duration per record'] = sum(Duration)/sum(Records) by DataProjectName, Direction\n| order by ['AVG duration per record'] desc \n| limit 100",
+        "size": 0,
+        "title": "Overview · Avg record processing duration by Data project · 13",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "barchart",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · Total executions per data project · 14",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| where name == \"DMFExportJobEnd\" or name == \"DMFImportJobEnd\"\n| summarize NumberOfExecutions =  count() by DataProjectName , direction\n| order by NumberOfExecutions desc",
+        "size": 0,
+        "title": "Overview · Total executions per data project · 14",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "barchart",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · Total records per data project · 15",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| where name == \"DMFExportJobEnd\" or name == \"DMFImportJobEnd\"\n| summarize sum(TotalNumberOfRecords) by DataProjectName , direction\n| order by sum_TotalNumberOfRecords desc",
+        "size": 0,
+        "title": "Overview · Total records per data project · 15",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "barchart",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · Total duration (sec) per data project · 16",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| where name in (\"DMFImportJobStart\",\"DMFImportJobEnd\",\"DMFExportJobStart\", \"DMFExportJobEnd\")\n| summarize Duration = max(timestamp)-min(timestamp) by DataProjectName, ExecutionId, direction\n| extend DurationInSec =  Duration / 1s\n| summarize DurationInSec = toint(  sum(DurationInSec)) by DataProjectName,  direction\n| order by DurationInSec desc",
+        "size": 0,
+        "title": "Overview · Total duration (sec) per data project · 16",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "barchart",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - 16",
+      "content": {
+        "json": "# RAW TELEMETRY\n"
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · Unfinished runs · 18",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let AllDMFEventsToNow = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. now() )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty('{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nAllDMFEventsToNow\r\n| where name == \"DMFExportJobStart\" or name == \"DMFImportJobStart\"\r\n| distinct DataProjectName, ExecutionId, direction\r\n| join kind=leftanti (AllDMFEventsToNow\r\n            | where name == \"DMFExportJobEnd\" or name == \"DMFImportJobEnd\"\r\n            | distinct ExecutionId) on $left.ExecutionId == $right.ExecutionId\r\n| limit 1000",
+        "size": 0,
+        "title": "Overview · Unfinished runs · 18",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 10000
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · Avg number or records per data project · 19",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| where name == \"DMFExportJobEnd\" or name == \"DMFImportJobEnd\"\n| summarize AvgRecords = avg(TotalNumberOfRecords) by DataProjectName\n| order by AvgRecords desc\n| limit 20",
+        "size": 0,
+        "title": "Overview · Avg number or records per data project · 19",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "barchart",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - Overview · Executions by number of records (top 10) · 20",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let allDMFEvents = (\ncustomEvents\n| where name startswith \"DMF\"\n| where timestamp between ({TimeRange:start} .. {TimeRange:end} )\n| extend cd = parse_json(customDimensions)\n| extend BatchJobCaption = tostring( cd.BatchJobCaption)\n| extend BatchJobId = tostring(cd.BatchJobId)\n| extend DataProjectName =  replace_regex(tostring(cd.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| extend EntityName = tostring( cd.EntityName)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorCategory = tostring(cd.ErrorCategory)\n| extend ErrorMessage = tostring(cd.ErrorMessage)\n| extend ExecutionId = tostring( cd.ExecutionId)\n| extend ExecutionMode = tostring(cd.ExecutionMode)\n| extend LegalEntity = tostring(cd.LegalEntity)\n| extend NumOfStagingNew = tolong(cd.NumOfStagingNew)\n| extend NumOfTargetNew = tolong(cd.NumOfTargetNew)\n| extend NumOfTargetUpdated = tolong(cd.NumOfTargetUpdated)\n| extend SourceOrTarget = cd.SourceOrTarget\n| extend StagingColumnName = tostring(cd.StagingColumnName)\n| extend StagingErrorCount = toint(cd.StagingErrorCount)\n| extend StagingRecId = tolong(cd.StagingRecId)\n| extend StagingStatus = tostring(cd.StagingStatus)\n| extend TargetErrorCount = toint(cd.TargetErrorCount)\n| extend TargetStatus = tostring(cd.TargetStatus)\n| extend TotalNumberOfRecords = tolong( cd.TotalNumberOfRecords)\n| extend aadTenantId = tostring(cd.aadTenantId)\n| extend activityId = tostring(cd.activityId)\n| extend environmentId = tostring(cd.environmentId)\n| extend eventId = tostring(cd.eventId)\n| extend direction = iff(name startswith \"DMFExport\", \"Export\",\n                     iff(name startswith \"DMFImport\", \"Import\", \n                     iff(ExecutionId has \"Import\" or ExecutionId has \"import\", \"Import\", \"Export\")))\n| where isempty( '{EnvironmentIdFilter}') or environmentId == '{EnvironmentIdFilter}'\n| where isempty( '{EntityNameFilter}' ) or EntityName == '{EntityNameFilter}'\n| where isempty( '{ExecutionIdFilter}' ) or ExecutionId == '{ExecutionIdFilter}'\n| where isempty( '{DataProjectFilter}' ) or DataProjectName == '{DataProjectFilter}'\n| where isempty( '{ActivityIdFilter}' ) or activityId == '{ActivityIdFilter}'\n| project timestamp, name, user_Id, cloud_RoleInstance, \n           BatchJobCaption, BatchJobId, DataProjectName,EntityName, ExecutionId, ExecutionMode,\n        LegalEntity, NumOfStagingNew, NumOfTargetNew, NumOfTargetUpdated, SourceOrTarget, StagingColumnName,\n        StagingErrorCount,StagingRecId,StagingStatus,TargetErrorCount,TargetStatus,TotalNumberOfRecords, ErrorMessage,\n         aadTenantId,activityId,environmentId,eventId,direction\n);\nallDMFEvents\n| where name in (\"DMFImportJobStart\",\"DMFImportJobEnd\",\"DMFExportJobStart\", \"DMFExportJobEnd\")\n| summarize Duration = max(timestamp)-min(timestamp), Start = min(timestamp), End = max(timestamp),  LegalEntity = take_any(LegalEntity), Records = max(TotalNumberOfRecords),ActivityId = take_any(activityId), Direction = take_any(direction) by ExecutionId\n| order by Records desc \n| limit 10",
+        "size": 0,
+        "title": "Overview · Executions by number of records (top 10) · 20",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "barchart",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - 20",
+      "content": {
+        "json": "# GENERAL INFO"
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - 21",
+      "content": {
+        "json": "# DATA PROJECTS TELEMETRY\n"
+      }
+    },
+    {
+      "type": 3,
+      "name": "FastTrack - DMF telemetry schema discovery",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "customEvents | where timestamp between ({TimeRange:start} .. {TimeRange:end}) | where name startswith 'DMF' | summarize Count=count(), Example=take_any(customDimensions) by name | order by Count desc",
+        "size": 0,
+        "title": "DMF telemetry schema discovery",
+        "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 7776000000
+        },
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 10000
+        }
+      }
+    }
+  ],
+  "isLocked": false,
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}
