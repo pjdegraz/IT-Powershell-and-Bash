@@ -495,12 +495,12 @@
     },
     {
       "type": 3,
-      "name": "FastTrack - Batch Overview · Available batch threads · 5",
+      "name": "FastTrack - Batch Overview - Available batch threads (adaptive)",
       "content": {
         "version": "KqlItem/1.0",
-        "query": "customEvents\n| where     timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where     name == \"BatchThreadInfo\"\n| extend    customDimensionsParsed  = parse_json(customDimensions)\n| where     isempty('{EnvironmentIdFilter}') or tostring(customDimensionsParsed.EnvironmentId) == '{EnvironmentIdFilter}'\n| extend    infoMessageParsed       = parse_json(tostring(customDimensionsParsed.InfoMessage))\n| extend    CurrentBatchTasks       = infoMessageParsed.CurrentBatchTasks\n| extend    TaskQueueCount          = infoMessageParsed.TaskQueueCount\n| extend    MaxThreadCount          = infoMessageParsed.MaxThreadCount\n| extend    ReservedNumberOfThreads = infoMessageParsed.ReservedNumberOfThreads\n| project   timestamp, Batch = tostring(split(cloud_RoleInstance, \"-\")[0]), AvailableThreads = todecimal(MaxThreadCount) - todecimal(CurrentBatchTasks) - todecimal(ReservedNumberOfThreads)",
+        "query": "// F&O BatchThreadInfo telemetry. Adaptive downsampling keeps total chart\n// points below ~650 across all AOS series, even across long selected windows.\n// Each point shows the MINIMUM available threads within that time bucket;\n// this retains brief capacity-exhaustion signals that an average can obscure.\nlet windowStart = {TimeRange:start};\nlet windowEnd = {TimeRange:end};\nlet samples = materialize(\n    customEvents\n    | where timestamp between (windowStart .. windowEnd)\n    | where name == \"BatchThreadInfo\"\n    | extend cd = customDimensions\n    | where isempty('{EnvironmentIdFilter:escape}')\n         or tostring(cd.EnvironmentId) == '{EnvironmentIdFilter:escape}'\n    | extend info = parse_json(tostring(cd.InfoMessage))\n    | extend AOS = tostring(cloud_RoleInstance),\n             AvailableThreads = toreal(info.MaxThreadCount)\n                              - toreal(info.CurrentBatchTasks)\n                              - toreal(info.ReservedNumberOfThreads)\n    | where isnotempty(AOS) and isnotnull(AvailableThreads)\n    | project timestamp, AOS, AvailableThreads\n);\nlet aosCount = toscalar(samples | summarize dcount(AOS));\nlet windowMinutes = toreal((windowEnd - windowStart) / 1m);\nlet bucketMinutes = max_of(1, tolong(ceiling(windowMinutes * max_of(1, aosCount) / 650.0)));\nsamples\n| summarize AvailableThreads = min(AvailableThreads)\n    by timestamp = bin(timestamp, bucketMinutes * 1m), Batch = AOS\n| order by timestamp asc",
         "size": 0,
-        "title": "Batch Overview · Available batch threads · 5",
+        "title": "Minimum available batch threads per AOS (adaptive time buckets)",
         "noDataMessage": "No data for these filters. Verify that the relevant F&O telemetry is enabled and sent to the selected Application Insights resource.",
         "noDataMessageStyle": 3,
         "showAnalytics": true,
@@ -751,6 +751,13 @@
       "name": "text - V2 Batch guidance",
       "content": {
         "json": "### v2 filter behavior\n\n- **TimeRange:** all standard monitoring charts are scoped directly to the selected interval. The task-span hierarchy, longest-task and missing-finish panels deliberately look backward to include work that began before the incident.\n- **Batch Job ID:** narrows job-specific panels. Global throttling charts are unfiltered by job because `BatchThrottled` can report a Job ID of `0`. Task-start signals are counts, **not actual concurrent running threads**.\n- **Activity ID:** narrows task execution and error detail views, not the global capacity gauges.\n- **Missing finish:** confirms only that a completion *event* was not observed. Check F&O batch history before treating it as a stuck task.\n\nSource: `source/Batch_ADX_Original.json`. Query syntax and workbook schema have been checked statically; live Application Insights data is not accessible to this conversion."
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - v3 adaptive thread capacity chart",
+      "content": {
+        "json": "### Available batch threads — adaptive chart detail\n\nThe **Minimum available batch threads per AOS** chart automatically adjusts time-bucket size based on the selected time span and number of AOS instances, targeting approximately **650 total plotted points**. Every plotted value is the **minimum** available thread count observed in its bucket (not the average). A value of 0 indicates that at least one sampled observation reported no free batch threads, but it does not prove sustained exhaustion between telemetry samples. Narrow the incident interval for finer resolution. The original unaggregated Microsoft KQL remains in `source/Batch_ADX_Original.json`."
       }
     }
   ],
