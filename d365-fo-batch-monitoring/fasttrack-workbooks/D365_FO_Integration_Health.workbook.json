@@ -1,0 +1,561 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "name": "text - intro",
+      "content": {
+        "json": "# D365 F&O · Integration Health & Telemetry Discovery\nThis Azure Workbook queries the **selected Application Insights resource** without a separate ADX cluster.\n\n**Discovery-first:** The workbook does not assume that any particular external integration emits telemetry. Check the **Data Readiness** and **Event Discovery** panels before treating downstream charts as meaningful.\n\nBuilt-in F&O telemetry can include DMF events and X++ exceptions when configured. Generic Application Insights `requests`, `dependencies`, and `traces` may be empty for Microsoft-managed F&O or may include unrelated applications. No F&O integration end-to-end delivery guarantee is implied.\n\n**Workflow:** choose resource and incident time, examine discovered source/event/operation names, enter an optional integration term, inspect errors/latency, and correlate by OperationId where the ID is actually propagated.\n\n**Interpretation:** A missing event ≠ a successful transaction, and a successful HTTP request ≠ successful business processing. No instrumentation keys or environment details are stored in this template."
+      }
+    },
+    {
+      "type": 9,
+      "name": "parameters - filters",
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "95410000-ac01-4000-8000-000000000001",
+            "version": "KqlParameterItem/1.0",
+            "name": "AppInsightsResource",
+            "label": "Application Insights resource",
+            "type": 5,
+            "isRequired": true,
+            "typeSettings": {
+              "additionalResourceOptions": [
+                "value::1"
+              ],
+              "showDefault": false,
+              "resourceTypeFilter": {
+                "microsoft.insights/components": true
+              }
+            },
+            "defaultValue": "value::1"
+          },
+          {
+            "id": "95410000-ac01-4000-8000-000000000002",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Incident date & time (Custom for 1–2 PM)",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 86400000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 3600000
+                },
+                {
+                  "durationMs": 14400000
+                },
+                {
+                  "durationMs": 43200000
+                },
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 172800000
+                },
+                {
+                  "durationMs": 604800000
+                }
+              ],
+              "allowCustom": true
+            }
+          },
+          {
+            "id": "95410000-ac01-4000-8000-000000000003",
+            "version": "KqlParameterItem/1.0",
+            "name": "IntegrationTerm",
+            "label": "Optional integration / API / partner term",
+            "type": 1,
+            "value": ""
+          },
+          {
+            "id": "95410000-ac01-4000-8000-000000000004",
+            "version": "KqlParameterItem/1.0",
+            "name": "EnvironmentIdFilter",
+            "label": "Optional F&O environment ID",
+            "type": 1,
+            "value": ""
+          },
+          {
+            "id": "95410000-ac01-4000-8000-000000000005",
+            "version": "KqlParameterItem/1.0",
+            "name": "OperationIdFilter",
+            "label": "Optional operation ID for correlation view",
+            "type": 1,
+            "value": ""
+          },
+          {
+            "id": "95410000-ac01-4000-8000-000000000006",
+            "version": "KqlParameterItem/1.0",
+            "name": "SlowMs",
+            "label": "Slow request/dependency threshold, ms",
+            "type": 1,
+            "value": "2000"
+          }
+        ],
+        "style": "above",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components"
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - readiness",
+      "content": {
+        "json": "## 1 · Data readiness and actual event discovery\nThese queries read the telemetry available **at runtime** in your Application Insights resource. They cannot infer signals that a vendor or service has not sent."
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - Data readiness — telemetry sources",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let begin={TimeRange:start};let finish={TimeRange:end};\nunion\n (customEvents | where timestamp between (begin .. finish) | summarize Records=count() | extend Source=\"customEvents\"),\n (requests | where timestamp between (begin .. finish) | summarize Records=count() | extend Source=\"requests\"),\n (dependencies | where timestamp between (begin .. finish) | summarize Records=count() | extend Source=\"dependencies\"),\n (traces | where timestamp between (begin .. finish) | summarize Records=count() | extend Source=\"traces\"),\n (exceptions | where timestamp between (begin .. finish) | summarize Records=count() | extend Source=\"exceptions\")\n| project Source,Records,Observation=iff(Records>0,\"Received telemetry\",\"Not observed in selected interval\")\n| order by Source asc",
+        "size": 0,
+        "title": "Data readiness — telemetry sources",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that the integration is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - All custom event names",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "customEvents | where timestamp between ({TimeRange:start} .. {TimeRange:end})\n| summarize Events=count(),LastSeen=max(timestamp) by EventName=name\n| top 300 by Events desc",
+        "size": 0,
+        "title": "All custom event names",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that the integration is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - Candidate integration custom events",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let term='{IntegrationTerm:escape}';\ncustomEvents | where timestamp between ({TimeRange:start} .. {TimeRange:end})\n| extend d=customDimensions\n| extend IntegrationLabel=coalesce(tostring(d.IntegrationName),tostring(d.Partner),tostring(d.SourceSystem),tostring(d.TargetSystem),tostring(d.InterfaceName))\n| extend EnvironmentId=coalesce(tostring(d.EnvironmentId),tostring(d.environmentId))\n| where isempty('{EnvironmentIdFilter:escape}') or EnvironmentId=='{EnvironmentIdFilter:escape}'\n| where isempty(term) or name contains term or IntegrationLabel contains term\n| summarize Events=count(),FirstSeen=min(timestamp),LastSeen=max(timestamp),WithActivityId=countif(isnotempty(tostring(d.activityId))) by EventName=name, IntegrationLabel,EnvironmentId\n| top 200 by Events desc",
+        "size": 0,
+        "title": "Candidate integration custom events",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that the integration is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - Custom event property key discovery (no values)",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let term='{IntegrationTerm:escape}';\ncustomEvents | where timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where isempty(term) or name contains term\n| extend Keys=bag_keys(customDimensions)\n| mv-expand Key=Keys to typeof(string)\n| summarize PropertyOccurrences=count(),SampleEvent=take_any(name) by PropertyName=Key\n| top 150 by PropertyOccurrences desc",
+        "size": 0,
+        "title": "Custom event property key discovery (no values)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that the integration is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - Request operation names (observed)",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let term='{IntegrationTerm:escape}';\nrequests | where timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where isempty(term) or name contains term\n| summarize Calls=count(),Failures=countif(tostring(success)=~\"false\"),LastSeen=max(timestamp) by RequestName=name,Role=cloud_RoleName\n| top 150 by Calls desc",
+        "size": 0,
+        "title": "Request operation names (observed)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that the integration is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - Dependency targets (observed)",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let term='{IntegrationTerm:escape}';\ndependencies | where timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where isempty(term) or name contains term or target contains term or type contains term\n| summarize Calls=count(),Failures=countif(tostring(success)=~\"false\"),LastSeen=max(timestamp) by DependencyName=name,Target=target,Type=type,Role=cloud_RoleName\n| top 150 by Calls desc",
+        "size": 0,
+        "title": "Dependency targets (observed)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that the integration is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - operation-health",
+      "content": {
+        "json": "## 2 · HTTP / dependency activity and health\nThe graphs count **observed telemetry**, not orders, retries, or partner acknowledgments. Request and dependency calls remain distinct to avoid double-counting."
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - Observed request and dependency traffic (adaptive 2-series timeline)",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let s={TimeRange:start};let e={TimeRange:end};let term='{IntegrationTerm:escape}';\nlet bucket=max_of(1,tolong(ceiling(toreal((e-s)/1m)/180.0)));\nunion\n (requests | where timestamp between (s .. e) | where isempty(term) or name contains term | project timestamp,Kind=\"Incoming requests\",Failed=(tostring(success)=~\"false\")),\n (dependencies | where timestamp between (s .. e) | where isempty(term) or name contains term or target contains term or type contains term | project timestamp,Kind=\"Outgoing dependencies\",Failed=(tostring(success)=~\"false\"))\n| summarize Events=count(),FailureSignals=countif(Failed) by TimeUtc=bin(timestamp,bucket*1m),Kind\n| order by TimeUtc asc",
+        "size": 0,
+        "title": "Observed request and dependency traffic (adaptive 2-series timeline)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that the integration is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "timechart",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - Request outcome and P95 duration",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let term='{IntegrationTerm:escape}';\nrequests | where timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where isempty(term) or name contains term\n| summarize Calls=count(),Failures=countif(tostring(success)=~\"false\"),P95Ms=round(percentile(toreal(duration/1ms),95),1) by RequestName=name,Role=cloud_RoleName\n| extend FailurePercent=round(100.0*Failures/Calls,1)\n| top 100 by Failures desc,Calls desc",
+        "size": 0,
+        "title": "Request outcome and P95 duration",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that the integration is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - Dependency outcome and P95 duration",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let term='{IntegrationTerm:escape}';\ndependencies | where timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where isempty(term) or name contains term or target contains term or type contains term\n| summarize Calls=count(),Failures=countif(tostring(success)=~\"false\"),P95Ms=round(percentile(toreal(duration/1ms),95),1) by DependencyName=name,Target=target,Type=type\n| extend FailurePercent=round(100.0*Failures/Calls,1)\n| top 100 by Failures desc,Calls desc",
+        "size": 0,
+        "title": "Dependency outcome and P95 duration",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that the integration is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - Slow outgoing dependencies (threshold)",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let term='{IntegrationTerm:escape}';let threshold=toreal('{SlowMs:escape}');\ndependencies | where timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where isempty(term) or name contains term or target contains term or type contains term\n| extend DurationMs=toreal(duration/1ms)\n| where DurationMs>=threshold\n| project TimeUtc=timestamp,Name=name,Target=target,Type=type,DurationMs,Success=success,ResultCode=resultCode,OperationId=operation_Id,Role=cloud_RoleName\n| top 200 by DurationMs desc",
+        "size": 0,
+        "title": "Slow outgoing dependencies (threshold)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that the integration is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - Most recent failed request / dependency signals",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let term='{IntegrationTerm:escape}';\nunion\n (requests | where timestamp between ({TimeRange:start} .. {TimeRange:end}) | where tostring(success)=~\"false\" | where isempty(term) or name contains term | project TimeUtc=timestamp,Kind=\"Request\",Name=name,Target=\"\",ResultCode=resultCode,DurationMs=toreal(duration/1ms),OperationId=operation_Id),\n (dependencies | where timestamp between ({TimeRange:start} .. {TimeRange:end}) | where tostring(success)=~\"false\" | where isempty(term) or name contains term or target contains term or type contains term | project TimeUtc=timestamp,Kind=\"Dependency\",Name=name,Target=target,ResultCode=resultCode,DurationMs=toreal(duration/1ms),OperationId=operation_Id)\n| top 250 by TimeUtc desc",
+        "size": 0,
+        "title": "Most recent failed request / dependency signals",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that the integration is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - diagnostics",
+      "content": {
+        "json": "## 3 · Error diagnostics / supported F&O DMF evidence\nAn exception is an application-side signal, not guaranteed evidence of an external partner failure. The DMFError query is relevant to integrations involving Data Management; it does not cover every OData call."
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - F&O DMFError events (if enabled)",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let term='{IntegrationTerm:escape}';\ncustomEvents | where timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where name == \"DMFError\"\n| extend d=customDimensions\n| extend Project=tostring(d.DataProjectName),Entity=tostring(d.EntityName),ExecutionId=tostring(d.ExecutionId),EnvironmentId=coalesce(tostring(d.EnvironmentId),tostring(d.environmentId))\n| where isempty('{EnvironmentIdFilter:escape}') or EnvironmentId=='{EnvironmentIdFilter:escape}'\n| where isempty(term) or Project contains term or Entity contains term or tostring(d.ErrorCategory) contains term\n| project TimeUtc=timestamp,Project,Entity,ExecutionId,BatchJobId=tostring(d.BatchJobId),Category=tostring(d.ErrorCategory),Message=tostring(d.ErrorMessage),ActivityId=tostring(d.activityId)\n| top 250 by TimeUtc desc",
+        "size": 0,
+        "title": "F&O DMFError events (if enabled)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that the integration is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - Application exceptions (observed)",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let term='{IntegrationTerm:escape}';\nexceptions | where timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where isempty(term) or outerMessage contains term or type contains term\n| project TimeUtc=timestamp,ExceptionType=type,MessagePreview=substring(outerMessage,0,350),Method=method,OperationId=operation_Id,Role=cloud_RoleName\n| top 200 by TimeUtc desc",
+        "size": 0,
+        "title": "Application exceptions (observed)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that the integration is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - Matching traces (search term required)",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let term='{IntegrationTerm:escape}';\ntraces | where timestamp between ({TimeRange:start} .. {TimeRange:end})\n| where isnotempty(term) and message contains term\n| project TimeUtc=timestamp,MessagePreview=substring(message,0,250),Severity=severityLevel,OperationId=operation_Id,Role=cloud_RoleName\n| top 200 by TimeUtc desc",
+        "size": 0,
+        "title": "Matching traces (search term required)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that the integration is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - correlation",
+      "content": {
+        "json": "## 4 · Individual operation timeline\nPaste a real `operation_Id` from a request/dependency result into the Operation ID filter. If the ID is not propagated across services, this view cannot link events between them."
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - Operation ID correlation across telemetry types",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let id='{OperationIdFilter:escape}';\nunion\n (requests | where timestamp between ({TimeRange:start} .. {TimeRange:end}) | where isnotempty(id) and operation_Id==id | project TimeUtc=timestamp,Kind=\"Request\",Name=name,Outcome=tostring(success),Detail=tostring(resultCode),OperationId=operation_Id),\n (dependencies | where timestamp between ({TimeRange:start} .. {TimeRange:end}) | where isnotempty(id) and operation_Id==id | project TimeUtc=timestamp,Kind=\"Dependency\",Name=name,Outcome=tostring(success),Detail=strcat(target,\" / \",resultCode),OperationId=operation_Id),\n (exceptions | where timestamp between ({TimeRange:start} .. {TimeRange:end}) | where isnotempty(id) and operation_Id==id | project TimeUtc=timestamp,Kind=\"Exception\",Name=type,Outcome=\"Error\",Detail=substring(outerMessage,0,250),OperationId=operation_Id),\n (traces | where timestamp between ({TimeRange:start} .. {TimeRange:end}) | where isnotempty(id) and operation_Id==id | project TimeUtc=timestamp,Kind=\"Trace\",Name=\"Trace\",Outcome=tostring(severityLevel),Detail=substring(message,0,250),OperationId=operation_Id),\n (customEvents | where timestamp between ({TimeRange:start} .. {TimeRange:end}) | where isnotempty(id) and operation_Id==id | project TimeUtc=timestamp,Kind=\"Custom event\",Name=name,Outcome=\"Event\",Detail=\"\",OperationId=operation_Id)\n| order by TimeUtc asc\n| take 500",
+        "size": 0,
+        "title": "Operation ID correlation across telemetry types",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that the integration is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - caveats",
+      "content": {
+        "json": "## 5 · Next instrumentation / limitations\n\nThis workbook is **not** an authoritative message-reconciliation dashboard. Successful HTTP responses do not prove business processing; no telemetry does not prove health. For reliable missing messages and retry analysis, you need correlated send/receive/acknowledge signals on both ends.\n\nRecommended custom event fields: **IntegrationName, Direction, CorrelationId, Operation, Outcome, RetryCount, DurationMs**, and a non-sensitive MessageId. Use explicit terminal statuses and do not emit customer data, secrets, message payloads, or order details.\n\nService Bus dead-letter queues, vendor logs, and external e-commerce systems require their own instrumentation or a permitted cross-resource query. This workbook operates only on the selected App Insights resource.\n\n**Validation status:** structural JSON and parameter checks only; event presence and query runtime must be verified by opening the workbook in your Azure tenant."
+      }
+    }
+  ],
+  "isLocked": false,
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}
