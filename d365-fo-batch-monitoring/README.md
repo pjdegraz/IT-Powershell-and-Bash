@@ -39,3 +39,5 @@ This is an **illustrative layout**, not real production data. The three levels a
 - Microsoft FastTrack example: https://community.dynamics.com/blogs/post/?postid=99ccc3c5-fb78-f011-b4cb-7c1e52649b7e
 - Azure Monitor native parent/child tree: https://learn.microsoft.com/en-us/azure/azure-monitor/visualize/workbooks-tree-visualizations
 - Azure Workbooks tree JSON examples: https://github.com/microsoft/Application-Insights-Workbooks/blob/master/Workbooks/Azure%20Monitor%20-%20Applications/Performance%20Analysis/Performance%20Analysis.workbook
+## Also in this folder
+- `health-dashboard/`: a one-screen health dashboard (feed freshness, DMF errors, batch failures, store sync proxy, optional Service Bus queue chart) built from the same telemetry. Not yet validated against live telemetry; see its README.

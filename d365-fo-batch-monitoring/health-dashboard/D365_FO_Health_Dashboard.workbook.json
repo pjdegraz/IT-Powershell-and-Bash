@@ -1,0 +1,578 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "name": "text - intro",
+      "content": {
+        "json": "# D365 F&O · Health Dashboard (no added cost)\nOne screen for the morning check: **is anything wrong right now, which feed, and why?** It reads only telemetry that is already in the selected Application Insights resource, plus optional free Azure Service Bus platform metrics. It creates no alerts, changes no collection settings and adds no ingestion.\n\n**Status: structure-checked only, not validated against live telemetry.** Event names follow the Microsoft FastTrack samples used by the other workbooks in this folder. Microsoft's documentation lists display names only, so confirm the real names with the *Integration Health / Discovery* workbook first and change the event-name parameters below if they differ.\n\n**Setup:** pick the Application Insights resource, then enter your DMF data projects in **Feed schedule** as `ProjectName=MaxHoursBetweenFinishes;OtherProject=1`. Project names are compared after the trailing GUID is stripped, the same way the DMF FastTrack workbook does.\n\nCompanion workbooks for drill-down: *D365 F&O Batch Incident Explorer (Hierarchy)*, *DMF FastTrack*, *Batch FastTrack*, *Integration Health / Discovery*."
+      }
+    },
+    {
+      "type": 9,
+      "name": "parameters - setup",
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "7d1e0000-b000-4000-8000-000000000001",
+            "version": "KqlParameterItem/1.0",
+            "name": "AppInsightsResource",
+            "label": "Application Insights resource",
+            "type": 5,
+            "isRequired": true,
+            "typeSettings": {
+              "additionalResourceOptions": [
+                "value::1"
+              ],
+              "showDefault": false,
+              "resourceTypeFilter": {
+                "microsoft.insights/components": true
+              }
+            },
+            "defaultValue": "value::1"
+          },
+          {
+            "id": "7d1e0000-b000-4000-8000-000000000002",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Lookback window (freshness uses all of it)",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 604800000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                {
+                  "durationMs": 86400000
+                },
+                {
+                  "durationMs": 172800000
+                },
+                {
+                  "durationMs": 259200000
+                },
+                {
+                  "durationMs": 604800000
+                }
+              ],
+              "allowCustom": true
+            }
+          },
+          {
+            "id": "7d1e0000-b000-4000-8000-000000000003",
+            "version": "KqlParameterItem/1.0",
+            "name": "FeedConfig",
+            "label": "Feed schedule (Project=MaxHours;...)",
+            "type": 1,
+            "value": "HOURLY_IMPORT_PROJECT=2;ORDER_IMPORT_PROJECT=1",
+            "description": "DMF data project names (GUID suffix stripped) and the most hours each may go between finished imports."
+          },
+          {
+            "id": "7d1e0000-b000-4000-8000-000000000004",
+            "version": "KqlParameterItem/1.0",
+            "name": "SyncJobTerms",
+            "label": "Store sync batch job caption terms (;-separated)",
+            "type": 1,
+            "value": "Distribution;P-0001;Synchronize orders;statement",
+            "description": "Words that appear in the captions of Commerce distribution, P-job, order sync and statement batch jobs. Inferred proxy: confirm against real captions."
+          },
+          {
+            "id": "7d1e0000-b000-4000-8000-000000000005",
+            "version": "KqlParameterItem/1.0",
+            "name": "DmfStartEvent",
+            "label": "DMF import start event name",
+            "type": 1,
+            "value": "DMFImportJobStart"
+          },
+          {
+            "id": "7d1e0000-b000-4000-8000-000000000006",
+            "version": "KqlParameterItem/1.0",
+            "name": "DmfEndEvent",
+            "label": "DMF import end event name",
+            "type": 1,
+            "value": "DMFImportJobEnd"
+          },
+          {
+            "id": "7d1e0000-b000-4000-8000-000000000007",
+            "version": "KqlParameterItem/1.0",
+            "name": "DmfErrorEvent",
+            "label": "DMF error event name",
+            "type": 1,
+            "value": "DMFError"
+          },
+          {
+            "id": "7d1e0000-b000-4000-8000-000000000008",
+            "version": "KqlParameterItem/1.0",
+            "name": "ServiceBusNamespace",
+            "label": "Optional Service Bus namespace (queue health)",
+            "type": 5,
+            "isRequired": false,
+            "query": "resources\n| where type =~ 'microsoft.servicebus/namespaces'\n| project id",
+            "crossComponentResources": [
+              "value::all"
+            ],
+            "typeSettings": {
+              "resourceTypeFilter": {
+                "microsoft.servicebus/namespaces": true
+              },
+              "additionalResourceOptions": [],
+              "showDefault": false
+            },
+            "queryType": 1,
+            "resourceType": "microsoft.resourcegraph/resources"
+          }
+        ],
+        "style": "above",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components"
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - headline",
+      "content": {
+        "json": "## 1 · Is anything wrong right now?\nOne tile per configured feed, plus 24-hour counts. Red means look closer; green is not proof of end-to-end delivery."
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - headline tiles",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let expected = print raw = split('{FeedConfig:escape}', ';')\n| mv-expand raw to typeof(string)\n| where isnotempty(trim(@\"\\s+\", raw))\n| extend Project = trim(@\"\\s+\", tostring(split(raw, '=')[0])),\n         MaxGapHours = todouble(trim(@\"\\s+\", tostring(split(raw, '=')[1])))\n| project Project, MaxGapHours;\ncustomEvents\n| where name in ('{DmfEndEvent:escape}', '{DmfErrorEvent:escape}')\n| extend Project = replace_regex(tostring(customDimensions.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| summarize LastFinish = maxif(timestamp, name == '{DmfEndEvent:escape}'),\n            Errors24h  = countif(name == '{DmfErrorEvent:escape}' and timestamp > ago(24h))\n            by Project\n| join kind=fullouter expected on Project\n| extend Project = coalesce(Project, Project1)\n| where isnotempty(Project)\n| extend HoursSinceFinish = round((now() - LastFinish) / 1h, 1)\n| extend Status = case(\n    isnull(LastFinish), 'Check: no finish in window',\n    isnotnull(MaxGapHours) and HoursSinceFinish > MaxGapHours, 'Check: overdue',\n    Errors24h > 0, 'Check: errors in last 24h',\n    'OK')\n| extend Expected = iff(isnull(MaxGapHours), 'not configured', strcat('every ', tostring(MaxGapHours), ' h or less'))\n| project Tile = Project, Value = HoursSinceFinish, Detail = 'hours since last finished import', Status, Order = 1\n| union (\n    customEvents\n    | where timestamp > ago(24h) and name == 'BatchTaskFailure'\n    | summarize Value = todouble(count())\n    | extend Tile = 'Batch task failures', Detail = 'last 24 hours', Status = iff(Value > 0, 'Check', 'OK'), Order = 2),\n  (\n    customEvents\n    | where timestamp > ago(24h) and name == '{DmfErrorEvent:escape}'\n    | summarize Value = todouble(count())\n    | extend Tile = 'DMF errors', Detail = 'last 24 hours', Status = iff(Value > 0, 'Check', 'OK'), Order = 3),\n  (\n    exceptions\n    | where timestamp > ago(24h)\n    | summarize Value = todouble(count())\n    | extend Tile = 'X++ exceptions', Detail = 'last 24 hours (context, not a status)', Status = 'Info', Order = 4)\n| order by Order asc, Tile asc\n| project Tile, Value, Detail, Status",
+        "size": 0,
+        "title": "Headline",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that everything is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "tiles",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "tileSettings": {
+          "titleContent": {
+            "columnMatch": "Tile",
+            "formatter": 1
+          },
+          "leftContent": {
+            "columnMatch": "Value",
+            "formatter": 12,
+            "formatOptions": {
+              "palette": "none"
+            }
+          },
+          "secondaryContent": {
+            "columnMatch": "Status",
+            "formatter": 18,
+            "formatOptions": {
+              "thresholdsOptions": "colors",
+              "thresholdsGrid": [
+                {
+                  "operator": "startsWith",
+                  "thresholdValue": "Check",
+                  "representation": "redBright",
+                  "text": "{0}{1}"
+                },
+                {
+                  "operator": "==",
+                  "thresholdValue": "Info",
+                  "representation": "gray",
+                  "text": "{0}{1}"
+                },
+                {
+                  "operator": "Default",
+                  "thresholdValue": null,
+                  "representation": "green",
+                  "text": "{0}{1}"
+                }
+              ]
+            }
+          },
+          "subtitleContent": {
+            "columnMatch": "Detail"
+          },
+          "showBorder": true
+        }
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - feeds",
+      "content": {
+        "json": "## 2 · Which feed, and why?\nFeed freshness catches a feed that quietly stopped; DMF errors say what broke. The authoritative record is F&O: **System administration > Workspaces > Data management**, then **Job history**."
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - feed freshness",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let expected = print raw = split('{FeedConfig:escape}', ';')\n| mv-expand raw to typeof(string)\n| where isnotempty(trim(@\"\\s+\", raw))\n| extend Project = trim(@\"\\s+\", tostring(split(raw, '=')[0])),\n         MaxGapHours = todouble(trim(@\"\\s+\", tostring(split(raw, '=')[1])))\n| project Project, MaxGapHours;\ncustomEvents\n| where name in ('{DmfEndEvent:escape}', '{DmfErrorEvent:escape}')\n| extend Project = replace_regex(tostring(customDimensions.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', '')\n| summarize LastFinish = maxif(timestamp, name == '{DmfEndEvent:escape}'),\n            Errors24h  = countif(name == '{DmfErrorEvent:escape}' and timestamp > ago(24h))\n            by Project\n| join kind=fullouter expected on Project\n| extend Project = coalesce(Project, Project1)\n| where isnotempty(Project)\n| extend HoursSinceFinish = round((now() - LastFinish) / 1h, 1)\n| extend Status = case(\n    isnull(LastFinish), 'Check: no finish in window',\n    isnotnull(MaxGapHours) and HoursSinceFinish > MaxGapHours, 'Check: overdue',\n    Errors24h > 0, 'Check: errors in last 24h',\n    'OK')\n| extend Expected = iff(isnull(MaxGapHours), 'not configured', strcat('every ', tostring(MaxGapHours), ' h or less'))\n| project Project, Status, HoursSinceFinish, Expected, Errors24h,\n          LastFinishET = datetime_utc_to_local(LastFinish, 'America/New_York')\n| order by Status asc, HoursSinceFinish desc",
+        "size": 0,
+        "title": "Feed freshness (DMF imports)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that everything is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500,
+          "formatters": [
+            {
+              "columnMatch": "Status",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "colors",
+                "thresholdsGrid": [
+                  {
+                    "operator": "startsWith",
+                    "thresholdValue": "Check",
+                    "representation": "redBright",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "green",
+                    "text": "{0}{1}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "customWidth": "50"
+    },
+    {
+      "type": 3,
+      "name": "query - dmf errors",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "customEvents\n| where timestamp > ago(24h) and name == '{DmfErrorEvent:escape}'\n| extend Project  = replace_regex(tostring(customDimensions.DataProjectName), @'-[({]?[a-fA-F0-9]{8}[-]?([a-fA-F0-9]{4}[-]?){3}[a-fA-F0-9]{12}[})]?', ''),\n         Entity   = tostring(customDimensions.EntityName),\n         Category = tostring(customDimensions.ErrorCategory),\n         Message  = tostring(customDimensions.ErrorMessage)\n| summarize Errors = count(), LastSeen = max(timestamp), SampleMessage = take_any(Message)\n            by Project, Entity, Category\n| extend LastSeenET = datetime_utc_to_local(LastSeen, 'America/New_York')\n| project Project, Entity, Category, Errors, LastSeenET, SampleMessage\n| order by Errors desc",
+        "size": 0,
+        "title": "DMF errors by project and entity (last 24 hours)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that everything is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      },
+      "customWidth": "50"
+    },
+    {
+      "type": 1,
+      "name": "text - trends",
+      "content": {
+        "json": "## 3 · Trends behind the failures"
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - dmf heartbeat",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "customEvents\n| where timestamp > ago(48h)\n| where name in ('{DmfStartEvent:escape}', '{DmfEndEvent:escape}', '{DmfErrorEvent:escape}')\n| summarize Started  = countif(name == '{DmfStartEvent:escape}'),\n            Finished = countif(name == '{DmfEndEvent:escape}'),\n            Errors   = countif(name == '{DmfErrorEvent:escape}')\n            by bin(timestamp, 1h)\n| order by timestamp asc",
+        "size": 0,
+        "title": "DMF import heartbeat per hour (last 48 hours)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that everything is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "barchart",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      },
+      "customWidth": "50"
+    },
+    {
+      "type": 3,
+      "name": "query - batch failures",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "customEvents\n| where timestamp > ago(24h) and name == 'BatchTaskFailure'\n| extend Job     = tostring(customDimensions.BatchJobCaption),\n         JobId   = tostring(customDimensions.BatchJobId),\n         Class   = tostring(customDimensions.ClassName),\n         Message = tostring(customDimensions.ExceptionMessage)\n| summarize Failures = count(), LastFailure = max(timestamp), SampleMessage = take_any(Message)\n            by Job, JobId, Class\n| extend LastFailureET = datetime_utc_to_local(LastFailure, 'America/New_York')\n| project Job, JobId, Class, Failures, LastFailureET, SampleMessage\n| order by Failures desc",
+        "size": 0,
+        "title": "Batch task failures by job (last 24 hours)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that everything is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      },
+      "customWidth": "50"
+    },
+    {
+      "type": 1,
+      "name": "text - stores",
+      "content": {
+        "json": "## 4 · Store sync and message queue\nF&O telemetry has no Commerce-specific signal, so store sync is an **inferred proxy**: batch activity for jobs whose captions contain the terms in the setup bar. Whether data actually reached the stores is in F&O: **Retail and Commerce > Inquiries and reports > Commerce Data Exchange > Download sessions** and **Upload sessions**, and **Retail and Commerce > Retail and Commerce IT > Distribution schedule**."
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - store sync proxy",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "let syncTerms = split('{SyncJobTerms:escape}', ';');\ncustomEvents\n| where timestamp > ago(24h)\n| where name in ('BatchTaskStart', 'BatchTaskFinished', 'BatchTaskFailure')\n| extend Job = tostring(customDimensions.BatchJobCaption)\n| where Job has_any (syncTerms)\n| summarize Runs       = countif(name == 'BatchTaskFinished'),\n            Failures   = countif(name == 'BatchTaskFailure'),\n            LastFinish = maxif(timestamp, name == 'BatchTaskFinished')\n            by Job\n| extend Status = iff(Failures > 0, 'Check: failures', 'OK'),\n         LastFinishET = datetime_utc_to_local(LastFinish, 'America/New_York')\n| project Job, Status, Runs, Failures, LastFinishET\n| order by Failures desc, Job asc",
+        "size": 0,
+        "title": "Store sync batch jobs (inferred proxy, last 24 hours)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that everything is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500,
+          "formatters": [
+            {
+              "columnMatch": "Status",
+              "formatter": 18,
+              "formatOptions": {
+                "thresholdsOptions": "colors",
+                "thresholdsGrid": [
+                  {
+                    "operator": "startsWith",
+                    "thresholdValue": "Check",
+                    "representation": "redBright",
+                    "text": "{0}{1}"
+                  },
+                  {
+                    "operator": "Default",
+                    "thresholdValue": null,
+                    "representation": "green",
+                    "text": "{0}{1}"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "customWidth": "50"
+    },
+    {
+      "type": 10,
+      "name": "metric - service bus queue health",
+      "content": {
+        "chartId": "workbook-sbqueue-health",
+        "version": "MetricsItem/2.0",
+        "size": 0,
+        "chartType": 2,
+        "resourceType": "microsoft.servicebus/namespaces",
+        "metricScope": 0,
+        "resourceParameter": "ServiceBusNamespace",
+        "resourceIds": [
+          "{ServiceBusNamespace}"
+        ],
+        "timeContextFromParameter": "TimeRange",
+        "timeContext": {
+          "durationMs": 604800000
+        },
+        "metrics": [
+          {
+            "namespace": "microsoft.servicebus/namespaces",
+            "metric": "microsoft.servicebus/namespaces--ActiveMessages",
+            "aggregation": 3
+          },
+          {
+            "namespace": "microsoft.servicebus/namespaces",
+            "metric": "microsoft.servicebus/namespaces--DeadletteredMessages",
+            "aggregation": 3
+          },
+          {
+            "namespace": "microsoft.servicebus/namespaces",
+            "metric": "microsoft.servicebus/namespaces--IncomingMessages",
+            "aggregation": 1
+          },
+          {
+            "namespace": "microsoft.servicebus/namespaces",
+            "metric": "microsoft.servicebus/namespaces--OutgoingMessages",
+            "aggregation": 1
+          }
+        ],
+        "title": "Service Bus queue health (free platform metrics)",
+        "gridSettings": {
+          "rowLimit": 10000
+        }
+      },
+      "customWidth": "50",
+      "conditionalVisibility": {
+        "parameterName": "ServiceBusNamespace",
+        "comparison": "isNotEqualTo",
+        "value": ""
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - service bus not set",
+      "content": {
+        "json": "**Service Bus queue health:** pick a namespace in the setup bar to chart active and dead-lettered messages. Platform metrics are free to view; you need read access (for example Monitoring Reader) on that namespace."
+      },
+      "customWidth": "50",
+      "conditionalVisibility": {
+        "parameterName": "ServiceBusNamespace",
+        "comparison": "isEqualTo",
+        "value": ""
+      }
+    },
+    {
+      "type": 1,
+      "name": "text - platform",
+      "content": {
+        "json": "## 5 · Platform and cost"
+      }
+    },
+    {
+      "type": 3,
+      "name": "query - xpp exceptions",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "exceptions\n| where timestamp > ago(24h)\n| extend Message = coalesce(outerMessage, tostring(customDimensions.Message))\n| summarize Count = count(), LastSeen = max(timestamp) by Message, type\n| extend LastSeenET = datetime_utc_to_local(LastSeen, 'America/New_York')\n| project Message, type, Count, LastSeenET\n| top 15 by Count",
+        "size": 0,
+        "title": "Top X++ exception messages (last 24 hours)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that everything is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "table",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ],
+        "gridSettings": {
+          "filter": true,
+          "rowLimit": 500
+        }
+      },
+      "customWidth": "50"
+    },
+    {
+      "type": 3,
+      "name": "query - batch capacity",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "customEvents\n| where timestamp > ago(48h) and name == 'BatchThreadInfo'\n| extend info = parse_json(tostring(customDimensions.InfoMessage))\n| summarize ActiveTasks = max(toint(info.CurrentBatchTasks)),\n            QueuedTasks = max(toint(info.TaskQueueCount))\n            by bin(timestamp, 15m)\n| order by timestamp asc",
+        "size": 0,
+        "title": "Batch capacity: active vs queued tasks (last 48 hours)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that everything is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "timechart",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      },
+      "customWidth": "50"
+    },
+    {
+      "type": 3,
+      "name": "query - telemetry volume",
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "union withsource=TableName customEvents, exceptions, traces, requests, dependencies, pageViews\n| summarize Records = count() by bin(timestamp, 1d), TableName\n| order by timestamp asc",
+        "size": 0,
+        "title": "Telemetry volume per day by type (cost guard)",
+        "noDataMessage": "No telemetry observed under these filters. This is NOT proof that everything is healthy.",
+        "noDataMessageStyle": 3,
+        "showAnalytics": true,
+        "exportToExcelOptions": "visible",
+        "queryType": 0,
+        "resourceType": "microsoft.insights/components",
+        "visualization": "barchart",
+        "timeContext": {
+          "durationMs": 0
+        },
+        "timeContextFromParameter": "TimeRange",
+        "crossComponentResources": [
+          "{AppInsightsResource}"
+        ]
+      },
+      "customWidth": "50"
+    },
+    {
+      "type": 1,
+      "name": "text - links",
+      "customWidth": "50",
+      "content": {
+        "json": "### Where to look next\n- **Lifecycle Services (LCS) > your project > Environment details > Environment monitoring**: SQL load, slow queries and activity for the Microsoft-managed environment.\n- **System administration > Setup > Monitoring and telemetry parameters**: which telemetry categories F&O sends.\n- **System administration > Inquiries > Batch jobs**: authoritative batch status and history.\n- **System administration > Workspaces > Data management**: DMF job history.\n- **Retail and Commerce > Inquiries and reports > Commerce Data Exchange > Download sessions / Upload sessions**: store sync results.\n\nThe volume chart counts records, not billed gigabytes. For gigabytes, open the Application Insights resource's **Usage and estimated costs** page, or run the `AppEvents` query in this folder's README against the Log Analytics workspace."
+      }
+    }
+  ],
+  "isLocked": false,
+  "fallbackResourceIds": [],
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}
